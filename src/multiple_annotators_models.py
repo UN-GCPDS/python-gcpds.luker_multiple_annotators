@@ -1,4 +1,5 @@
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -7,6 +8,7 @@ import matplotlib
 from umap import UMAP
 from scipy.special import softmax
 from scipy.spatial.distance import cdist
+from sklearn.manifold import TSNE
 
 class CKA(BaseEstimator, TransformerMixin):
     """Class for computing the Centered Kernel Alignment (CKA).
