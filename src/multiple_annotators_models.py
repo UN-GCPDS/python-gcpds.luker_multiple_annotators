@@ -5,6 +5,8 @@ import tensorflow_probability as tfp
 import matplotlib.pyplot as plt
 import matplotlib
 from umap import UMAP
+from scipy.special import softmax
+from scipy.spatial.distance import cdist
 
 class CKA(BaseEstimator, TransformerMixin):
     """Class for computing the Centered Kernel Alignment (CKA).
