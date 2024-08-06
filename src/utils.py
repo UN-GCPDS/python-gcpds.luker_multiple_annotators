@@ -6,7 +6,9 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from matplotlib.patches import Rectangle
-
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
+from sklearn.neighbors import KNeighborsClassifier
 
 def create_dfs(df_base, fq_vars, sens_vars, num_annotators, how_dropna='any'):
     fq_vars = list(fq_vars)
@@ -24,6 +26,42 @@ def create_dfs(df_base, fq_vars, sens_vars, num_annotators, how_dropna='any'):
         mask = mask.astype('bool')
         df_vars, df_ma = df_vars.loc[mask], df_ma.loc[mask]
     return df_vars, df_ma, anotadores
+
+def create_dfs_impute(df_fq, df_sens, annotators, fq_vars, sens_vars, family):
+    df_comb = df_sens.merge(df_fq, left_on='codigo sampler', right_on='CodMuestra')
+    df_fam = df_comb[df_comb.Matriz == family]
+    cods_sampler = df_fam.CodMuestra.unique()
+    df_fq_fam = df_fq[df_fq['CodMuestra'].isin(cods_sampler)]
+    df_vars = df_fq_fam[['CodMuestra'] + fq_vars].set_index('CodMuestra')
+    try:
+        df_vars.loc[df_vars['humedad - determinador halogeno'] > 1,:] = np.nan
+    except:
+        pass
+    # imputation fq_vars
+    imputer = IterativeImputer()
+    df_vars[:] = imputer.fit_transform(df_vars)
+
+    # df_ma
+    df_sens_fam = df_sens[df_sens['codigo sampler'].isin(cods_sampler)]
+    df_sens_fam = df_sens_fam.loc[:,['codigo sampler', 'codigo evaluador'] + sens_vars]
+    df_sens_fam = df_sens_fam[df_sens_fam['codigo evaluador'].str.isnumeric()]
+    df_sens_fam.iloc[:,1:] = df_sens_fam.iloc[:,1:].apply(pd.to_numeric)
+    df_sens_fam = df_sens_fam[df_sens_fam['codigo evaluador'].isin(annotators)]
+    df_ma = pd.pivot_table(df_sens_fam, columns='codigo evaluador', index='codigo sampler')
+    idx = df_ma.index.intersection(df_vars.index)
+    df_ma = df_ma.loc[idx]
+    df_vars = df_vars.loc[idx]
+    for ann in annotators:
+        for var in sens_vars:
+            knn = KNeighborsRegressor()
+            mask_test = df_ma.loc[:,(var, ann)].isna()
+            mask_train = ~mask_test
+            x_train = df_vars[mask_train].values
+            x_test = df_vars[mask_test].values
+            y_train = df_ma.loc[:,(var, ann)][mask_train]
+            knn.fit(x_train, y_train)
+            df_ma.loc[:,(var, ann)][mask_test] = np.round(knn.predict(x_test)*2)/2
+    return df_vars, df_ma
 
 def get_iAnn(y):
     return (~np.isnan(y)).astype(float)
