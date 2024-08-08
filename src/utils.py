@@ -8,7 +8,7 @@ from sklearn.manifold import TSNE
 from matplotlib.patches import Rectangle
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neighbors import KNeighborsRegressor
 
 def create_dfs(df_base, fq_vars, sens_vars, num_annotators, how_dropna='any'):
     fq_vars = list(fq_vars)
