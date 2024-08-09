@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+scikit-learn
+numpy
+tensorflow
+matplotlib
+umap-learn
+scipy
+pandas
