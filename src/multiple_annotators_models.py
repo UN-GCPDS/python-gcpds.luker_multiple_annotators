@@ -9,6 +9,7 @@ from umap import UMAP
 from scipy.special import softmax
 from scipy.spatial.distance import cdist
 from sklearn.manifold import TSNE
+import keras
 
 class CKA(BaseEstimator, TransformerMixin):
     """Class for computing the Centered Kernel Alignment (CKA).
@@ -736,7 +737,7 @@ class LCKA(BaseEstimator, TransformerMixin):
             q2_new[~idx, ann] = calculated_q2
         return q2_new
 
-@tf.keras.saving.register_keras_serializable
+@keras.saving.register_keras_serializable()
 class MA_GCCE():
  #Constructor __init__. Special method: identified by a double underscore at either side of their name
  #work in the background
@@ -829,7 +830,7 @@ class MA_GCCE():
 
         return self
 
-    def get_params(self, deep=True):
+    def get_config(self, deep=True):
         return { 'l1_param':self.l1_param, 'dropout':self.dropout, 'optimizer':self.optimizer,
                 'learning_rate':self.learning_rate, 'batch_size':self.batch_size,
                 'epochs':self.epochs, 'verbose':self.verbose, 'validation_split':self.validation_split,
