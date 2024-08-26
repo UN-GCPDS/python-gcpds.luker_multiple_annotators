@@ -773,7 +773,6 @@ class MA_GCCE():
     def fit(self, X, Y):
         #input X numpy array first dimension samples (N)x features (P)
         #input Y numpy array vector len = samples (N) x  annotators (R)
-        P = X[0].shape[1]
         if self.optimizer == "Adam":
             opt = tf.keras.optimizers.Adam(learning_rate=self.learning_rate, clipnorm=1.0)
         elif self.optimizer == "SGD":
@@ -781,7 +780,7 @@ class MA_GCCE():
         else:
             opt=self.optimizer
 
-        inputs = tf.keras.layers.Input(shape=(6,), name='entrada')
+        inputs = tf.keras.layers.Input(shape=(5,), name='entrada')
         x = tf.keras.layers.Dense(64, activation='relu')(inputs)
         x = tf.keras.layers.Dense(64, activation='relu')(x)
         x = tf.keras.layers.Dense(32, activation='relu')(x)
