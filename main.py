@@ -12,7 +12,7 @@ sens_vars = ['acidez', 'amargor', 'aroma', 'astringencia', 'dulce', 'dureza',
 
 def GCCE_MA_loss(y_true, y_pred):
     return MA_GCCE.GCCE_MA_loss(y_true, y_pred)
-}
+
 def load_model_sens():
     models_sens = []
     for var in sens_vars:
