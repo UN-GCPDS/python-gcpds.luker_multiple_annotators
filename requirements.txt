@@ -4,6 +4,7 @@ pydantic
 scikit-learn
 numpy
 tensorflow
+tensorflow_probability
 matplotlib
 umap-learn
 scipy
