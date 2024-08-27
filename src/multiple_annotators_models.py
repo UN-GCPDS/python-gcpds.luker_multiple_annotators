@@ -737,7 +737,7 @@ class LCKA(BaseEstimator, TransformerMixin):
             q2_new[~idx, ann] = calculated_q2
         return q2_new
 
-@keras.saving.register_keras_serializable()
+
 class MA_GCCE():
  #Constructor __init__. Special method: identified by a double underscore at either side of their name
  #work in the background
@@ -756,7 +756,7 @@ class MA_GCCE():
         self.R=R
         self.K=K
         self.q=q
-
+    @keras.saving.register_keras_serializable()
     def GCCE_MA_loss(self, y_true, y_pred):
         # print(y_true,y_pred)
        # q = 0.1

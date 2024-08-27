@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query
 import tensorflow as tf
 from src import models
-
+from multiple_annotators_models import MA_GCCE
 app = FastAPI()
 
 fq_vars = ['humedad - determinador halogeno', 'grasa - nmr', 'granulometría - micrometro',
@@ -10,10 +10,14 @@ fq_vars = ['humedad - determinador halogeno', 'grasa - nmr', 'granulometría - m
 sens_vars = ['acidez', 'amargor', 'aroma', 'astringencia', 'dulce', 'dureza',
              'impresion global', 'velocidad fusion']
 
+def GCCE_MA_loss(y_true, y_pred):
+    return MA_GCCE.GCCE_MA_loss(y_true, y_pred)
+}
 def load_model_sens():
     models_sens = []
     for var in sens_vars:
-        models_sens.append(tf.keras.models.load_model(f"models/gcce/gcce_ma_{var}.keras"))
+        models_sens.append(tf.keras.models.load_model(f"models/gcce/gcce_ma_{var}.keras",
+                                                      custom_objects={'method': GCCE_MA_loss}))
     return models.MultiOutputModel(models)
 
 model_to_sens = load_model_sens()
