@@ -1,10 +1,11 @@
 fastapi
 uvicorn
 pydantic
+sqlalchemy
 scikit-learn
 numpy
 tensorflow
-tensorflow_probability
+tensorflow_probability[tf]
 matplotlib
 umap-learn
 scipy

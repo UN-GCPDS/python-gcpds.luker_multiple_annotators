@@ -1,22 +1,19 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Depends, Query
+from pydantic import BaseModel
+
 import tensorflow as tf
 from src import models
 from src.multiple_annotators_models import MA_GCCE
 import numpy as np
+from src.parameters import SENS_VARS_CHOC
 app = FastAPI()
-
-fq_vars = ['humedad - determinador halogeno', 'grasa - nmr', 'granulometría - micrometro',
-           'viscosidad plastica  anton paar', 'limite de fluidez  anton paar']
-
-sens_vars = ['acidez', 'amargor', 'aroma', 'astringencia', 'dulce', 'dureza',
-             'impresion global', 'velocidad fusion']
 
 def GCCE_MA_loss(y_true, y_pred):
     return MA_GCCE.GCCE_MA_loss(y_true, y_pred)
 
 def load_model_sens():
     models_sens = []
-    for var in sens_vars:
+    for var in SENS_VARS_CHOC:
         models_sens.append(tf.keras.models.load_model(f"models/gcce/gcce_ma_{var}.keras",
                                                       custom_objects={'method': GCCE_MA_loss}))
     return models.MultiOutputModel(models_sens)
