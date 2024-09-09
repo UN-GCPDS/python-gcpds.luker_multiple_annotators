@@ -1,4 +1,2 @@
-*
-!.gitignore
-!chocolate/
-!chocolate/*
+datos_fisi_quim.csv
+datos_sensoriales.csv
