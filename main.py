@@ -6,7 +6,8 @@ import sqlite3
 
 from src import models
 from src.multiple_annotators_models import MA_GCCE
-from src.parameters import SENS_VARS_CHOC, FQ_VARS_CHOC
+from src.utils import get_iAnn
+from src.parameters import *
 
 app = FastAPI()
 # %% load models
@@ -129,4 +130,19 @@ async def retrain_model_fq():
 
 @app.post("/retrain_model_sens")
 async def retrain_model_sens():
-    pass
+    old_df_fq = read_from_db(OLD_DATA, 'train_fq')
+    new_df_fq = read_from_db(NEW_DATA, 'train_fq')
+    df_fq = pd.concat([old_df_fq, new_df_fq], ignore_index=True).set_index('cod_sampler')
+    for var in SENS_VARS_CHOC:
+        old_df_var = read_from_db(OLD_DATA, f'train_{var}')
+        new_df_var = read_from_db(NEW_DATA, f'train_{var}')
+        df_var = pd.concat([old_df_fq, new_df_fq], ignore_index=True).set_index('cod_sampler')
+        idx = df_var.index.intersection(df_fq.index)
+        y = df_var[idx].values.round()
+        X = df_fq[idx].values
+        iAnn = get_iAnn(y)
+        y = np.nan_to_num(y)
+        model = MA_GCCE(R=len(ANOTADORES_CHOC), K=10, learning_rate=1e-4, verbose=0)
+        model.fit(X, y)
+        models.save("")
+    return ""
