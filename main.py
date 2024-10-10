@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import numpy as np
 import tensorflow as tf
 import sqlite3
+import pandas as pd
 
 from src import models
 from src.multiple_annotators_models import MA_GCCE

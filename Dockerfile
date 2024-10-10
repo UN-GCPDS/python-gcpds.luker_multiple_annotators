@@ -1,10 +1,16 @@
 # Dockerfile
 
 # Use an official Python runtime as a parent image
-FROM python:3.11.3-slim
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
+
+# Instala g++ y cualquier otra dependencia
+RUN apt-get update && apt-get install -y \
+    g++ \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Actualizar pip a la última versión
 RUN pip install --upgrade pip
