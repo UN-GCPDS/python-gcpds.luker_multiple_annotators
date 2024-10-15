@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional, Dict
 import numpy as np
 import tensorflow as tf
 # import sqlite3
@@ -8,7 +8,7 @@ import pandas as pd
 
 from src import models
 from src.multiple_annotators_models import MA_GCCE
-from src.utils import get_iAnn
+from src.utils import get_iAnn, transform_data
 from src.parameters import *
 from fastapi import FastAPI, Depends
 import tensorflow as tf
@@ -60,14 +60,17 @@ class SensInput(BaseModel):
     reference_id : str
 
 class SensoryData(BaseModel):
-    acidity: float
-    bitterness: float
-    aroma: float
-    astringency: float
-    sweetness: float
-    hardness: float
-    global_impression: float
-    melting_speed: float
+    acidity: Optional[float]
+    bitterness: Optional[float]
+    aroma: Optional[float]
+    astringency: Optional[float]
+    sweetness: Optional[float]
+    hardness: Optional[float]
+    global_impression: Optional[float]
+    melting_speed: Optional[float]
+
+class UserSensoryData(BaseModel):
+    sensory_data: List[SensoryData]
 
 class PhysicochemicalData(BaseModel):
     humidity_halogen: float
@@ -84,6 +87,16 @@ class TrainingData(BaseModel):
     family: str
     type_model: int
     data: List[TrainingItem]
+
+class TrainingItem2(BaseModel):
+    physicochemical_data: PhysicochemicalData
+    sensory_data_by_user: Dict[str, UserSensoryData]
+
+    # Define the main schema for the training data
+class TrainingData2(BaseModel):
+    family: str
+    type_model: int
+    data: List[TrainingItem2]
 
 # %% prediction endpoints using injected dependencies
 @app.post("/predict_sens")
@@ -143,20 +156,11 @@ async def retrain_model_fq(training_data: TrainingData, model_to_fq=Depends(get_
     return {"message": "Modelo entrenado exitosamente"}
 
 @app.post("/retrain_model_sens")
-async def retrain_model_sens():
-    # old_df_fq = read_from_db(OLD_DATA, 'train_fq')
-    # new_df_fq = read_from_db(NEW_DATA, 'train_fq')
-    # df_fq = pd.concat([old_df_fq, new_df_fq], ignore_index=True).set_index('cod_sampler')
+async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends(get_model_sens)):
+    Y, X = transform_data(training_data)
     for var in SENS_VARS_CHOC:
-        # old_df_var = read_from_db(OLD_DATA, f'train_{var}')
-        # new_df_var = read_from_db(NEW_DATA, f'train_{var}')
-        # df_var = pd.concat([old_df_fq, new_df_fq], ignore_index=True).set_index('cod_sampler')
-        # idx = df_var.index.intersection(df_fq.index)
-        # y = df_var[idx].values.round()
-        # X = df_fq[idx].values
-        iAnn = get_iAnn(y)
-        y = np.nan_to_num(y)
-        model = MA_GCCE(R=len(ANOTADORES_CHOC), K=10, learning_rate=1e-4, verbose=0)
+        y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]]))
+        model = MA_GCCE(R=y.shape[1], K=10, learning_rate=1e-4, verbose=0)
         model.fit(X, y)
-        models.save("")
-    return ""
+        model.model.save(f"models/gcce/gcce_ma_{var}.keras")
+    return {"message": "Modelo entrenado exitosamente"}

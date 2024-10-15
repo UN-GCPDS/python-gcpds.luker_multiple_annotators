@@ -180,3 +180,44 @@ def plot_kde_clusters(df_vars, labels):
 
     plt.tight_layout()
     plt.show()
+
+def transform_data(training_data):
+    # Initialize the dictionary to store results
+    result = {}
+
+    # Initialize the list to store physicochemical data
+    physicochemical_result = []
+  
+    # Get list of unique user codes
+    unique_users = set()
+    for sample in training_data.data:
+        sensory_data_by_user = sample.sensory_data_by_user
+        unique_users.update(sensory_data_by_user.keys())
+    unique_users = sorted(unique_users)
+
+
+    # Loop through each sample in the data
+    for i, sample in enumerate(training_data.data):
+        # Get the sensory data for each user in the current sample
+        sensory_data_by_user = sample.sensory_data_by_user
+
+        # Collect physicochemical data (single array per sample)
+        physicochemical_data = sample.physicochemical_data
+        physicochemical_result.append([physicochemical_data.dict()[var] for var in physicochemical_data.dict()])
+        # Loop through each user and their corresponding sensory data
+        for user_id, user_data in sensory_data_by_user.items():
+            # Check if sensory data exists for this user
+            if user_data.sensory_data:
+                for sensory_var, value in user_data.sensory_data[0].dict().items():
+                    # Initialize the list for the sensory variable if not already done
+                    if sensory_var not in result:
+                        result[sensory_var] = pd.DataFrame(columns=unique_users)
+                    result[sensory_var].loc[i, user_id] = value
+
+    # Convert lists to numpy arrays for better handling
+    for key in result.keys():
+        result[key] = result[key].to_numpy(dtype='float')
+    # Convert physicochemical data to numpy array
+    physicochemical_result = pd.DataFrame(physicochemical_result, columns=training_data.data[0].physicochemical_data.dict().keys())
+    physicochemical_result = physicochemical_result.to_numpy()
+    return result, physicochemical_result
