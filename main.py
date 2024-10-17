@@ -1,29 +1,24 @@
-from fastapi import FastAPI, Depends
-from pydantic import BaseModel
+from fastapi import FastAPI, Depends, HTTPException
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict
 import numpy as np
 import tensorflow as tf
-# import sqlite3
-import pandas as pd
 
 from src import models
 from src.multiple_annotators_models import MA_GCCE
 from src.utils import get_iAnn, transform_data
 from src.parameters import *
-from fastapi import FastAPI, Depends
-import tensorflow as tf
-import numpy as np
 
 app = FastAPI()
 
-# %% Dependency to load models
+# Dependency to load models
 def get_model_sens():
     return app.state.model_to_sens
 
 def get_model_fq():
     return app.state.model_to_fq
 
-# %% load models (moved to app startup event)
+# Load models (moved to app startup event)
 @app.on_event("startup")
 def load_models():
     def GCCE_MA_loss(y_true, y_pred):
@@ -39,7 +34,10 @@ def load_models():
     # Load physicochemical model
     app.state.model_to_fq = tf.keras.models.load_model('models/gcce/model_s2fq.keras')
 
-# %% schemas
+# Definir constante global para el número mínimo de muestras
+MIN_SAMPLES = 10
+
+# Schemas
 class FqInput(BaseModel):
     humidity_halogen : float
     fat_nmr : float
@@ -88,17 +86,30 @@ class TrainingData(BaseModel):
     type_model: int
     data: List[TrainingItem]
 
+    # Validator to ensure minimum number of samples
+    @validator("data")
+    def check_min_samples(cls, v):
+        if len(v) < MIN_SAMPLES:  # Accede a la constante global en vez de un atributo de clase
+            raise ValueError(f"Se necesitan al menos {MIN_SAMPLES} muestras para el entrenamiento.")
+        return v
+
 class TrainingItem2(BaseModel):
     physicochemical_data: PhysicochemicalData
     sensory_data_by_user: Dict[str, UserSensoryData]
 
-    # Define the main schema for the training data
 class TrainingData2(BaseModel):
     family: str
     type_model: int
     data: List[TrainingItem2]
 
-# %% prediction endpoints using injected dependencies
+    # Validator to ensure minimum number of samples
+    @validator("data")
+    def check_min_samples(cls, v):
+        if len(v) < MIN_SAMPLES:  # Accede a la constante global en vez de un atributo de clase
+            raise ValueError(f"Se necesitan al menos {MIN_SAMPLES} muestras para el entrenamiento.")
+        return v
+
+# Prediction endpoints using injected dependencies
 @app.post("/predict_sens")
 async def predict_sens(data: FqInput, model_to_sens=Depends(get_model_sens)):
     input_data = np.array([[data.humidity_halogen, data.fat_nmr, data.granulometry_micrometer,
@@ -118,9 +129,30 @@ async def predict_fq(data: SensInput, model_to_fq=Depends(get_model_fq)):
     pred_values = predictions.flatten().tolist()
     return {TRANS_FQ_VARS_CHOC[FQ_VARS_CHOC[i]]: pred_values[i] for i in range(len(pred_values))}
 
-# %% retraining endpoint
+# Retraining endpoint with validation for sensory model
+@app.post("/retrain_model_sens")
+async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends(get_model_sens)):
+    # Check minimum number of samples
+    if len(training_data.data) < MIN_SAMPLES:
+        raise HTTPException(status_code=400, detail=f"Se necesitan al menos {MIN_SAMPLES} muestras para el entrenamiento.")
+
+    # Transform and retrain the model
+    Y, X = transform_data(training_data)
+    for var in SENS_VARS_CHOC:
+        y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]]))
+        model = MA_GCCE(R=y.shape[1], K=10, learning_rate=1e-4, verbose=0)
+        model.fit(X, y)
+        model.model.save(f"models/gcce/gcce_ma_{var}.keras")
+
+    return {"message": "Modelo entrenado exitosamente"}
+
+# Retraining endpoint with validation for physicochemical model
 @app.post("/retrain_model_fq")
 async def retrain_model_fq(training_data: TrainingData, model_to_fq=Depends(get_model_fq)):
+    # Check minimum number of samples
+    if len(training_data.data) < MIN_SAMPLES:
+        raise HTTPException(status_code=400, detail=f"Se necesitan al menos {MIN_SAMPLES} muestras para el entrenamiento.")
+
     sensory_data_list = []
     physicochemical_data_list = []
 
@@ -153,14 +185,4 @@ async def retrain_model_fq(training_data: TrainingData, model_to_fq=Depends(get_
     # Retrain the model with new data
     model_to_fq.fit(X, Y)
     model_to_fq.save("models/gcce/model_s2fq.keras")
-    return {"message": "Modelo entrenado exitosamente"}
-
-@app.post("/retrain_model_sens")
-async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends(get_model_sens)):
-    Y, X = transform_data(training_data)
-    for var in SENS_VARS_CHOC:
-        y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]]))
-        model = MA_GCCE(R=y.shape[1], K=10, learning_rate=1e-4, verbose=0)
-        model.fit(X, y)
-        model.model.save(f"models/gcce/gcce_ma_{var}.keras")
     return {"message": "Modelo entrenado exitosamente"}
