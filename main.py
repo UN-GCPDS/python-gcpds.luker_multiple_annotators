@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict
 import numpy as np
 import tensorflow as tf
+import pickle
 
 from src import models
 from src.multiple_annotators_models import MA_GCCE
@@ -17,6 +18,9 @@ def get_model_sens():
 
 def get_model_fq():
     return app.state.model_to_fq
+
+def get_scaler_fq():
+    return app.state.scaler_fq
 
 # Load models (moved to app startup event)
 @app.on_event("startup")
@@ -34,6 +38,9 @@ def load_models():
     # Load physicochemical model
     app.state.model_to_fq = tf.keras.models.load_model('models/gcce/model_s2fq.keras')
 
+    with open('models\gcce\scaler_X.pkl', 'rb') as file:
+        scaler_X = pickle.load(file)
+    app.state.scaler_fq = scaler_X
 # Definir constante global para el número mínimo de muestras
 MIN_SAMPLES = 10
 
@@ -111,33 +118,34 @@ class TrainingData2(BaseModel):
 
 # Prediction endpoints using injected dependencies
 @app.post("/predict_sens")
-async def predict_sens(data: FqInput, model_to_sens=Depends(get_model_sens)):
+async def predict_sens(data: FqInput, model_to_sens=Depends(get_model_sens), scaler_fq=Depends(get_scaler_fq)):
     input_data = np.array([[data.humidity_halogen, data.fat_nmr, data.granulometry_micrometer,
                             data.plastic_viscosity_anton_paar, data.flow_limit_anton_paar]])
-    
+    input_data = scaler_fq.transform(input_data)
     predictions, _ = model_to_sens.predict(input_data)
 
     pred_values = predictions.flatten().tolist()
     return {TRANS_SENS_VARS_CHOC[SENS_VARS_CHOC[i]]: pred_values[i] for i in range(len(pred_values))}
 
 @app.post("/predict_fq")
-async def predict_fq(data: SensInput, model_to_fq=Depends(get_model_fq)):
+async def predict_fq(data: SensInput, model_to_fq=Depends(get_model_fq), scaler_fq=Depends(get_scaler_fq)):
     input_data = np.array([[data.acidity, data.bitterness, data.aroma, data.astringency,
                             data.sweetness, data.hardness, data.global_impression, data.melting_speed]])
+    input_data /= 10
     predictions = model_to_fq.predict(input_data)
-
+    predictions = scaler_fq.inverse_transform(predictions)
     pred_values = predictions.flatten().tolist()
     return {TRANS_FQ_VARS_CHOC[FQ_VARS_CHOC[i]]: pred_values[i] for i in range(len(pred_values))}
 
 # Retraining endpoint with validation for sensory model
 @app.post("/retrain_model_sens")
-async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends(get_model_sens)):
+async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends(get_model_sens), scaler_fq=Depends(get_scaler_fq)):
     # Check minimum number of samples
     if len(training_data.data) < MIN_SAMPLES:
         raise HTTPException(status_code=400, detail=f"Se necesitan al menos {MIN_SAMPLES} muestras para el entrenamiento.")
-
     # Transform and retrain the model
     Y, X = transform_data(training_data)
+    X = scaler_fq.transform(X)
     for var in SENS_VARS_CHOC:
         y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]]))
         model = MA_GCCE(R=y.shape[1], K=10, learning_rate=1e-4, verbose=0)
@@ -148,7 +156,7 @@ async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends
 
 # Retraining endpoint with validation for physicochemical model
 @app.post("/retrain_model_fq")
-async def retrain_model_fq(training_data: TrainingData, model_to_fq=Depends(get_model_fq)):
+async def retrain_model_fq(training_data: TrainingData, model_to_fq=Depends(get_model_fq), scaler_fq=Depends(get_scaler_fq)):
     # Check minimum number of samples
     if len(training_data.data) < MIN_SAMPLES:
         raise HTTPException(status_code=400, detail=f"Se necesitan al menos {MIN_SAMPLES} muestras para el entrenamiento.")
@@ -181,8 +189,8 @@ async def retrain_model_fq(training_data: TrainingData, model_to_fq=Depends(get_
     # Convert lists to NumPy arrays
     X = np.array(sensory_data_list)
     Y = np.array(physicochemical_data_list)
-
+    Y = scaler_fq.transform(Y)
     # Retrain the model with new data
-    model_to_fq.fit(X, Y)
+    model_to_fq.fit(X/10, Y)
     model_to_fq.save("models/gcce/model_s2fq.keras")
     return {"message": "Modelo entrenado exitosamente"}
