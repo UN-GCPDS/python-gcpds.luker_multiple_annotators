@@ -27,9 +27,12 @@ def create_dfs(df_base, fq_vars, sens_vars, num_annotators, how_dropna='any'):
         df_vars, df_ma = df_vars.loc[mask], df_ma.loc[mask]
     return df_vars, df_ma, anotadores
 
-def create_dfs_impute(df_fq, df_sens, annotators, fq_vars, sens_vars, family):
+def create_dfs_impute(df_fq, df_sens, annotators, fq_vars, sens_vars, family=None):
     df_comb = df_sens.merge(df_fq, left_on='codigo sampler', right_on='CodMuestra')
-    df_fam = df_comb[df_comb.Matriz == family]
+    if family is not None:
+        df_fam = df_comb[df_comb.Matriz == family]
+    else:
+        df_fam = df_comb
     cods_sampler = df_fam.CodMuestra.unique()
     df_fq_fam = df_fq[df_fq['CodMuestra'].isin(cods_sampler)]
     df_vars = df_fq_fam[['CodMuestra'] + fq_vars].set_index('CodMuestra')
