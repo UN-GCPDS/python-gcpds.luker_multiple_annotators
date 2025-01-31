@@ -1,24 +1,9 @@
 <mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" version="26.0.10">
   <diagram id="C5RBs43oDa-KdzZeNtuy" name="Page-1">
-    <mxGraphModel dx="989" dy="532" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="1" shadow="0">
+    <mxGraphModel dx="1062" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="1" shadow="0">
       <root>
         <mxCell id="WIyWlLk6GJQsqaUBKTNV-0" />
         <mxCell id="WIyWlLk6GJQsqaUBKTNV-1" parent="WIyWlLk6GJQsqaUBKTNV-0" />
-        <mxCell id="bKT88K2eKm8Ra163NtKh-31" value="" style="group" vertex="1" connectable="0" parent="WIyWlLk6GJQsqaUBKTNV-1">
-          <mxGeometry x="650" y="30" width="356" height="240" as="geometry" />
-        </mxCell>
-        <mxCell id="bKT88K2eKm8Ra163NtKh-33" value="Estimaciones modelo VS 1&amp;nbsp;" style="rounded=0;whiteSpace=wrap;html=1;glass=0;" vertex="1" parent="bKT88K2eKm8Ra163NtKh-31">
-          <mxGeometry width="120" height="50" as="geometry" />
-        </mxCell>
-        <mxCell id="bKT88K2eKm8Ra163NtKh-34" value="Estimaciones modelo VS M&amp;nbsp;" style="rounded=0;whiteSpace=wrap;html=1;glass=0;" vertex="1" parent="bKT88K2eKm8Ra163NtKh-31">
-          <mxGeometry y="100" width="120" height="50" as="geometry" />
-        </mxCell>
-        <mxCell id="bKT88K2eKm8Ra163NtKh-35" value="$$ \vdots $$" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;" vertex="1" parent="bKT88K2eKm8Ra163NtKh-31">
-          <mxGeometry x="30" y="60" width="60" height="30" as="geometry" />
-        </mxCell>
-        <mxCell id="bKT88K2eKm8Ra163NtKh-36" value="&amp;nbsp;\[ \begin{align} \mathbb{\hat{Y}}_m &amp;amp;\in [0, 10]^{N_m} \\ \lambda_m &amp;amp; \in \mathbb{R}^{N_m \times R} \end{align}\]" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="bKT88K2eKm8Ra163NtKh-31">
-          <mxGeometry x="-255" y="168" width="630" height="30" as="geometry" />
-        </mxCell>
         <mxCell id="bKT88K2eKm8Ra163NtKh-47" value="" style="group" vertex="1" connectable="0" parent="WIyWlLk6GJQsqaUBKTNV-1">
           <mxGeometry x="160" width="474" height="270" as="geometry" />
         </mxCell>
@@ -86,14 +71,26 @@
         <mxCell id="bKT88K2eKm8Ra163NtKh-43" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="bKT88K2eKm8Ra163NtKh-47" source="bKT88K2eKm8Ra163NtKh-18" target="bKT88K2eKm8Ra163NtKh-28">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="bKT88K2eKm8Ra163NtKh-44" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="bKT88K2eKm8Ra163NtKh-47" source="bKT88K2eKm8Ra163NtKh-28" target="bKT88K2eKm8Ra163NtKh-33">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="bKT88K2eKm8Ra163NtKh-45" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="bKT88K2eKm8Ra163NtKh-47" source="bKT88K2eKm8Ra163NtKh-29" target="bKT88K2eKm8Ra163NtKh-34">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
         <mxCell id="bKT88K2eKm8Ra163NtKh-46" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="bKT88K2eKm8Ra163NtKh-47" source="bKT88K2eKm8Ra163NtKh-20" target="bKT88K2eKm8Ra163NtKh-29">
           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="bKT88K2eKm8Ra163NtKh-33" value="Estimaciones modelo VS 1&amp;nbsp;" style="rounded=0;whiteSpace=wrap;html=1;glass=0;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="650" y="30" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="bKT88K2eKm8Ra163NtKh-34" value="Estimaciones modelo VS M&amp;nbsp;" style="rounded=0;whiteSpace=wrap;html=1;glass=0;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="650" y="130" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="bKT88K2eKm8Ra163NtKh-35" value="$$ \vdots $$" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="680" y="90" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="bKT88K2eKm8Ra163NtKh-44" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="bKT88K2eKm8Ra163NtKh-28" target="bKT88K2eKm8Ra163NtKh-33">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="bKT88K2eKm8Ra163NtKh-45" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="bKT88K2eKm8Ra163NtKh-29" target="bKT88K2eKm8Ra163NtKh-34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="bKT88K2eKm8Ra163NtKh-49" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;&amp;nbsp;\[ \begin{align} \mathbb{\hat{Y}}_m &amp;amp;\in [0, 10]^{N_m} \\ \lambda_m &amp;amp; \in \mathbb{R}^{N_m \times R} \end{align}\]&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="680" y="190" width="60" height="30" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
