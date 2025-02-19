@@ -19,7 +19,19 @@ class MultiOutputModel(tf.keras.Model):
 
         return np.vstack(sens_predict).T, ann_rel
 
-
+class MultiOutputCCGPMA(tf.keras.Model):
+    def __init__(self, models):
+        super(MultiOutputCCGPMA, self).__init__()
+        self.models = models
+    def predict(self, inputs):
+        sens_predict = []
+        ann_rel = []
+        for model in self.models:
+            pred = model.compiled_predict_y(inputs)
+            sens_predict.append(np.clip(pred[0][:,0], a_min=0, a_max=10))
+            ann_rel.append(pred[0][:,1:])
+        return np.vstack(sens_predict).T, ann_rel
+    
 class model_s2fq:
     def __init__(self):
         self.model = self._build_model()
