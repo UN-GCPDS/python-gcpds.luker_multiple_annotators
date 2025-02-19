@@ -121,7 +121,7 @@ async def predict_sens(data: FqInput, model_to_sens=Depends(get_model_sens), sca
                             data.plastic_viscosity_anton_paar, data.flow_limit_anton_paar]])
     input_data = scaler_fq.transform(input_data)
     predictions, _ = model_to_sens.predict(input_data)
-
+    predictions *= 10
     pred_values = predictions.flatten().tolist()
     return {TRANS_SENS_VARS_CHOC[SENS_VARS_CHOC[i]]: pred_values[i] for i in range(len(pred_values))}
 
