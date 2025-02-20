@@ -36,7 +36,7 @@ def load_models():
     # Load physicochemical model
     app.state.model_to_fq = tf.keras.models.load_model('models/gcce/model_s2fq.keras')
 
-    with open('models\ccgpma\scaler.pkl', 'rb') as file:
+    with open('models/ccgpma/scaler.pkl', 'rb') as file:
         scaler_X = pickle.load(file)
     app.state.scaler_fq = scaler_X
 # Definir constante global para el número mínimo de muestras
@@ -146,7 +146,7 @@ async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends
     X = scaler_fq.transform(X)
     
     for var in SENS_VARS_CHOC:
-        y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]]))
+        y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]])).astype(np.float32)
         R = y.shape[1]
         L = R + 1
         M = min(100, X.shape[0])
@@ -160,6 +160,8 @@ async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends
         X_max = np.max(X, axis=0)
         Zinit = X_min + Zinit * (X_max - X_min)
         Zinit = Zinit.astype(np.float32)
+
+        X = X.astype(np.float32)
 
         # Define kernels
         kern_list = [gpf.kernels.SquaredExponential(variance=0.5, lengthscales=0.05) for _ in range(L)]

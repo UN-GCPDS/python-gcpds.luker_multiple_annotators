@@ -4,7 +4,7 @@ from gpflow.ci_utils import reduce_in_tests
 from gpflow.utilities import print_summary
 from check_shapes import check_shapes, inherit_check_shapes
 from gpflow.ci_utils import reduce_in_tests
-
+import numpy as np
 MAXITER = reduce_in_tests(500)
 gpf.config.set_default_float(tf.float32)
 
