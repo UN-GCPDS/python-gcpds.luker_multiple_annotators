@@ -4,12 +4,14 @@ from typing import List, Optional, Dict
 import numpy as np
 import tensorflow as tf
 import pickle
+import gpflow as gpf
+from scipy.stats import qmc
 
 from src import models
 from src.multiple_annotators_models import MA_GCCE
 from src.utils import get_iAnn, transform_data
 from src.parameters import *
-
+from src.ccgpma_gpflow import multiAnnotator_Gaussian, run_adam, create_compiled_predict_y
 app = FastAPI()
 
 # Dependency to load models
@@ -25,20 +27,16 @@ def get_scaler_fq():
 # Load models (moved to app startup event)
 @app.on_event("startup")
 def load_models():
-    def GCCE_MA_loss(y_true, y_pred):
-        return MA_GCCE.GCCE_MA_loss(y_true, y_pred)
-
     # Load sensory model
     models_sens = []
     for var in SENS_VARS_CHOC:
-        models_sens.append(tf.keras.models.load_model(f"models/gcce/gcce_ma_{var}.keras",
-                                                      custom_objects={'method': GCCE_MA_loss}))
-    app.state.model_to_sens = models.MultiOutputModel(models_sens)
+        models_sens.append(tf.saved_model.load(f"models/ccgpma/ccgpma_{var}"))
+    app.state.model_to_sens = models.MultiOutputCCGPMA(models_sens)
 
     # Load physicochemical model
     app.state.model_to_fq = tf.keras.models.load_model('models/gcce/model_s2fq.keras')
 
-    with open('models\gcce\scaler_X.pkl', 'rb') as file:
+    with open('models/ccgpma/scaler.pkl', 'rb') as file:
         scaler_X = pickle.load(file)
     app.state.scaler_fq = scaler_X
 # Definir constante global para el número mínimo de muestras
@@ -123,7 +121,7 @@ async def predict_sens(data: FqInput, model_to_sens=Depends(get_model_sens), sca
                             data.plastic_viscosity_anton_paar, data.flow_limit_anton_paar]])
     input_data = scaler_fq.transform(input_data)
     predictions, _ = model_to_sens.predict(input_data)
-
+    predictions *= 10
     pred_values = predictions.flatten().tolist()
     return {TRANS_SENS_VARS_CHOC[SENS_VARS_CHOC[i]]: pred_values[i] for i in range(len(pred_values))}
 
@@ -146,11 +144,58 @@ async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends
     # Transform and retrain the model
     Y, X = transform_data(training_data)
     X = scaler_fq.transform(X)
+    
     for var in SENS_VARS_CHOC:
-        y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]]))
-        model = MA_GCCE(R=y.shape[1], K=10, learning_rate=1e-4, verbose=0)
-        model.fit(X, y)
-        model.model.save(f"models/gcce/gcce_ma_{var}.keras")
+        y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]])).astype(np.float32)
+        R = y.shape[1]
+        L = R + 1
+        M = min(100, X.shape[0])
+        minibatch_size = 100
+        # inducing points
+        dim = X.shape[1]
+        lhs = qmc.LatinHypercube(d=dim)
+        Zinit = lhs.random(n=M)
+
+        X_min = np.min(X, axis=0)
+        X_max = np.max(X, axis=0)
+        Zinit = X_min + Zinit * (X_max - X_min)
+        Zinit = Zinit.astype(np.float32)
+
+        X = X.astype(np.float32)
+
+        # Define kernels
+        kern_list = [gpf.kernels.SquaredExponential(variance=0.5, lengthscales=0.05) for _ in range(L)]
+        kernel = gpf.kernels.LinearCoregionalization(kern_list, W=np.identity(L))
+
+        # Set up inducing variables
+        Z = Zinit.copy()
+        iv = gpf.inducing_variables.SharedIndependentInducingVariables(
+            gpf.inducing_variables.InducingPoints(Z)
+        )
+
+        # Variational Parameters
+        q_mu = np.zeros((M, L))
+        q_sqrt = np.repeat(np.eye(M)[None, ...], L, axis=0) * 0.1
+
+        # Create SVGP Model
+        m = gpf.models.SVGP(
+            kernel,
+            multiAnnotator_Gaussian(R),
+            inducing_variable=iv,
+            q_mu=q_mu,
+            q_sqrt=q_sqrt,
+        )
+
+        # Training
+        train_dataset = tf.data.Dataset.from_tensor_slices((X, y)).repeat()
+        lr = 0.01
+        MAXITER = 500
+        logf = run_adam(m, train_dataset, minibatch_size, MAXITER, lr)
+        
+        m.compiled_predict_y = create_compiled_predict_y(m, X.shape[1])
+        # 🔹 Save Model
+        tf.saved_model.save(m, f"models/ccgpma/ccgpma_{var}")
+
 
     return {"message": "Modelo entrenado exitosamente"}
 
