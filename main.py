@@ -7,11 +7,11 @@ import pickle
 import gpflow as gpf
 from scipy.stats import qmc
 
-from src import models
-from src.multiple_annotators_models import MA_GCCE
-from src.utils import get_iAnn, transform_data
-from src.parameters import *
-from src.ccgpma_gpflow import multiAnnotator_Gaussian, run_adam, create_compiled_predict_y
+from ma_models import models
+from src.ma_models.multiple_annotators_models import MA_GCCE
+from src.ma_models.utils import get_iAnn, transform_data
+from src.ma_models.parameters import *
+from src.ma_models.ccgpma.ccgpma_gpflow import multiAnnotator_Gaussian, run_adam, create_compiled_predict_y
 app = FastAPI()
 
 # Dependency to load models
