@@ -3,10 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
 
-
 def train_model(model, train_loader, val_loader, config, device):
     """
-    Train the AutoTabVAE model for a given number of epochs with early stopping.
+    Train the AutoTabVAE model using the total loss for optimization and regression loss for validation.
 
     Parameters
     ----------
@@ -26,7 +25,7 @@ def train_model(model, train_loader, val_loader, config, device):
     model : nn.Module
         Trained model with best validation performance.
     best_val_loss : float
-        Best validation loss achieved.
+        Best regression validation loss achieved.
     """
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=config["lr"])
@@ -52,20 +51,21 @@ def train_model(model, train_loader, val_loader, config, device):
             clip_grad_norm_(model.parameters(), max_norm=5.0)
             optimizer.step()
 
-        # Validation
+        # Validation on regression loss only
         model.eval()
-        val_loss = 0
+        val_reg_loss = 0
         with torch.no_grad():
             for x_val, y_val in val_loader:
                 x_val, y_val = x_val.to(device), y_val.to(device)
+
                 reconstructed_x, regression_output, mu, logvar, M_loss = model(x_val)
-                total_loss, *_ = model.loss_function(
+                _, _, _, reg_loss, _ = model.loss_function(
                     x_val, reconstructed_x, y_val, regression_output,
                     mu, logvar, M_loss, **config["loss_weights"]
                 )
-                val_loss += total_loss.item()
+                val_reg_loss += reg_loss.item()
 
-        avg_val_loss = val_loss / len(val_loader)
+        avg_val_loss = val_reg_loss / len(val_loader)
         scheduler.step(avg_val_loss)
 
         if avg_val_loss < best_val_loss:
