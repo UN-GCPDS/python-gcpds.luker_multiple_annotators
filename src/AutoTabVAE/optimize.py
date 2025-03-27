@@ -4,9 +4,9 @@ from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import KFold
 import numpy as np
 
-from autotabvae.model import TabNetVAE
-from autotabvae.dataset import TabularDataset
-from autotabvae.train import train_model
+from .model import TabNetVAE
+from .dataset import TabularDataset
+from .train import train_model
 
 
 def objective(trial):
