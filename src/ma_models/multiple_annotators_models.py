@@ -503,7 +503,7 @@ class LCKA(BaseEstimator, TransformerMixin):
         Loss value.
         """
         # N = X.shape[0]
-        N = tf.shape(X)[0]
+        N = tf.cast(tf.shape(X)[0], tf.float64)
         KXX = self.ComputeKernel_X(X)
         Kmu_c = self.ComputeKernel_Y(Y,iAnn,KXX,idx)
         I = tf.eye(N, dtype=tf.dtypes.float64)
