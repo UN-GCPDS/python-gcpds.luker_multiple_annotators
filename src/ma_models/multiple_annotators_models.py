@@ -529,29 +529,80 @@ class LCKA(BaseEstimator, TransformerMixin):
         None
         """
         batch_size = self.batch_size
-        train_data=tf.data.Dataset.from_tensor_slices((X,Y,self.iAnn,
-                                                       self.idx))
-        train_data=train_data.shuffle(buffer_size=100).batch(batch_size).repeat(5)
+        N_total = X.shape[0]
+
+        self.X_full = tf.convert_to_tensor(X, dtype=tf.float64)
+        self.Y_full = tf.convert_to_tensor(Y, dtype=tf.float64)
+        self.iAnn_full = tf.convert_to_tensor(self.iAnn, dtype=tf.float64)
+        self.idx_full = tf.range(1, N_total+1, dtype=tf.int64)
+
+        train_data = tf.data.Dataset.from_tensor_slices((X, Y, self.iAnn, self.idx))
+        train_data = train_data.shuffle(buffer_size=100).batch(batch_size).repeat(5)
+
         lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=self.lr,
                                 decay_steps=50,decay_rate=0.9)
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
         self.loss_ = np.zeros(self.epochs)
+
+        # -------------------------------
+        # Early stopping variables
+        best_loss = np.inf
+        patience = 30         # you can tune this
+        wait = 0
+        best_beta = None
+        # -------------------------------        
         for epoch in range(self.epochs):
             if epoch % 10 == 0:
-                print("Start of epoch %d" % (epoch,))
+                print(f"Start of epoch {epoch}")
 
+            epoch_losses = []
             # Iterate over the batches of the dataset.
-            for step, (x_batch_train,y_batch_train,iAnn_batch,
-                       idx_batch) in enumerate(train_data):
+            for step, (x_batch_train, y_batch_train, iAnn_batch, idx_batch) in enumerate(train_data):
+                current_batch_size = tf.shape(x_batch_train)[0]
+
+                if current_batch_size < batch_size:
+                    num_missing = batch_size - current_batch_size
+
+                    random_idx = tf.random.uniform(shape=(num_missing,), minval=0, maxval=N_total, dtype=tf.int32)
+                    x_extra = tf.gather(self.X_full, random_idx)
+                    y_extra = tf.gather(self.Y_full, random_idx)
+                    iAnn_extra = tf.gather(self.iAnn_full, random_idx)
+                    idx_extra = tf.gather(self.idx_full, random_idx)
+
+                    x_batch_train = tf.concat([x_batch_train, x_extra], axis=0)
+                    y_batch_train = tf.concat([y_batch_train, y_extra], axis=0)
+                    iAnn_batch = tf.concat([iAnn_batch, iAnn_extra], axis=0)
+                    idx_batch = tf.concat([idx_batch, idx_extra], axis=0)
+
                 with tf.GradientTape() as tape:
                     loss = self.LCKA_loss(x_batch_train, y_batch_train,
                                          iAnn_batch,idx_batch)
                 grads = tape.gradient(loss, [self.beta, self.ls_X])
                 self.optimizer.apply_gradients(zip(grads, [self.beta, self.ls_X]))
 
+                epoch_losses.append(loss.numpy())
+
                 if step % 50 == 0:
                      print(f"step {step}: mean loss {loss.numpy().round(4)} ls {self.ls_X.numpy().round(2)} lr {(self.optimizer.learning_rate.numpy()).round(5)}" )
-            self.loss_[epoch] = loss
+            
+            mean_loss = np.mean(epoch_losses)
+            self.loss_[epoch] = mean_loss
+
+            # Early stopping check
+            if mean_loss < best_loss - 1e-4:  # small improvement threshold
+                best_loss = mean_loss
+                best_beta = self.beta.numpy()  # save best weights
+                wait = 0
+            else:
+                wait += 1
+                if wait >= patience:
+                    print(f"Early stopping at epoch {epoch}")
+                    break
+
+        # Restore best weights if early stopping triggered
+        if best_beta is not None:
+            self.beta.assign(best_beta)
+
     def transform(self, X, *_):
         """
         Parameters:
