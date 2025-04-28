@@ -655,7 +655,7 @@ class LCKA(BaseEstimator, TransformerMixin):
 
     def plot_history(self):
       fig,ax = plt.subplots(1,figsize=(3,3))
-      ax.plot(np.arange(self.loss_),self.loss_)
+      ax.plot(np.arange(len(self.loss_)),self.loss_)
       ax.set_xlabel('epochs')
       ax.set_ylabel('loss')
       plt.show()
