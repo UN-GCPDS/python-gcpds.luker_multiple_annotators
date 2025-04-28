@@ -10,6 +10,7 @@ from scipy.special import softmax
 from scipy.spatial.distance import cdist
 from sklearn.manifold import TSNE
 import keras
+import pickle
 
 class CKA(BaseEstimator, TransformerMixin):
     """Class for computing the Centered Kernel Alignment (CKA).
@@ -805,6 +806,46 @@ class LCKA(BaseEstimator, TransformerMixin):
             q2_new[~idx, ann] = calculated_q2
         return q2_new
 
+    def save(self, path):
+        # Save all regular Python attributes (like q, loss_) and tf.Variable values
+        data = {
+            'epochs': self.epochs,
+            'batch_size': self.batch_size,
+            'ls_X': self.ls_X.numpy(),  # TensorFlow Variable to value
+            'ls_Y': self.ls_Y.numpy(),
+            'iAnn': self.iAnn,
+            'l1': self.l1,
+            'l2': self.l2,
+            'lr': self.lr,
+            'beta': self.beta.numpy(),  # Save beta weights
+            'q': self.q,
+            'loss_': self.loss_,
+        }
+        with open(path, 'wb') as f:
+            pickle.dump(data, f)
+            
+    def load(self, path):
+        # Load the pickle file
+        with open(path, 'rb') as f:
+            data = pickle.load(f)
+        
+        # Set back all the attributes
+        self.epochs = data['epochs']
+        self.batch_size = data['batch_size']
+        self.iAnn = data['iAnn']
+        self.N, self.R = self.iAnn.shape
+        
+        # Now recreate Variables and assign the saved values
+        self.beta = tf.Variable(data['beta'], dtype=tf.float64)
+        self.ls_X = tf.Variable(data['ls_X'], dtype=tf.float64)
+        self.ls_Y = tf.Variable(data['ls_Y'], dtype=tf.float64)
+        
+        self.idx = tf.range(1,self.N+1,dtype=tf.int64)
+        self.q = data['q']
+        self.l1 = data['l1']
+        self.l2 = data['l2']
+        self.lr = data['lr']
+        self.loss_ = data['loss_']
 
 class MA_GCCE():
  #Constructor __init__. Special method: identified by a double underscore at either side of their name
