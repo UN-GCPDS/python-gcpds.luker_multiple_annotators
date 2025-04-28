@@ -552,7 +552,7 @@ class LCKA(BaseEstimator, TransformerMixin):
 
         # --- Reduce LR on Plateau setup ---
         reduce_patience = 5     # how many epochs to wait before reducing LR
-        lr_reduce_factor = 0.95  # multiply LR by this factor
+        lr_reduce_factor = 0.5  # multiply LR by this factor
         wait_reduce = 0
         min_lr = 1e-6           # minimum learning rate
         min_delta = 1e-5
