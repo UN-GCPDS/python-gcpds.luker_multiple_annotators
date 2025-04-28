@@ -539,7 +539,7 @@ class LCKA(BaseEstimator, TransformerMixin):
         train_data = tf.data.Dataset.from_tensor_slices((X, Y, self.iAnn, self.idx))
         train_data = train_data.shuffle(buffer_size=100).batch(batch_size).repeat(5)
 
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=tf.Variable(self.lr, dtype=tf.float64))
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
         self.loss_ = []
 
         # -------------------------------
@@ -607,7 +607,8 @@ class LCKA(BaseEstimator, TransformerMixin):
             if wait_reduce >= reduce_patience:
                 old_lr = float(tf.keras.backend.get_value(self.optimizer.learning_rate))
                 new_lr = max(old_lr * lr_reduce_factor, min_lr)
-                tf.keras.backend.set_value(self.optimizer.learning_rate, new_lr)
+                # tf.keras.backend.set_value(self.optimizer.learning_rate, new_lr)
+                self.optimizer.learning_rate = new_lr
                 print(f"Reducing learning rate from {old_lr:.6f} to {new_lr:.6f}")
                 wait_reduce = 0  # reset reduce wait
 
