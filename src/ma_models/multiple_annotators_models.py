@@ -539,10 +539,8 @@ class LCKA(BaseEstimator, TransformerMixin):
         train_data = tf.data.Dataset.from_tensor_slices((X, Y, self.iAnn, self.idx))
         train_data = train_data.shuffle(buffer_size=100).batch(batch_size).repeat(5)
 
-        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=self.lr,
-                                decay_steps=50,decay_rate=0.9)
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
-        self.loss_ = np.zeros(self.epochs)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
+        self.loss_ = []
 
         # -------------------------------
         # Early stopping variables
@@ -551,6 +549,12 @@ class LCKA(BaseEstimator, TransformerMixin):
         wait = 0
         best_beta = None
         # -------------------------------        
+
+        # --- Reduce LR on Plateau setup ---
+        reduce_patience = 5     # how many epochs to wait before reducing LR
+        lr_reduce_factor = 0.95  # multiply LR by this factor
+        wait_reduce = 0
+        min_lr = 1e-6           # minimum learning rate
         for epoch in range(self.epochs):
             if epoch % 10 == 0:
                 print(f"Start of epoch {epoch}")
@@ -586,7 +590,7 @@ class LCKA(BaseEstimator, TransformerMixin):
                      print(f"step {step}: mean loss {loss.numpy().round(4)} ls {self.ls_X.numpy().round(2)} lr {(self.optimizer.learning_rate.numpy()).round(5)}" )
             
             mean_loss = np.mean(epoch_losses)
-            self.loss_[epoch] = mean_loss
+            self.loss_.append(mean_loss)
 
             # Early stopping check
             if mean_loss < best_loss - 1e-4:  # small improvement threshold
@@ -599,6 +603,14 @@ class LCKA(BaseEstimator, TransformerMixin):
                     print(f"Early stopping at epoch {epoch}")
                     break
 
+            # --- ReduceLROnPlateau logic ---
+            if wait_reduce >= reduce_patience:
+                old_lr = float(tf.keras.backend.get_value(self.optimizer.learning_rate))
+                new_lr = max(old_lr * lr_reduce_factor, min_lr)
+                tf.keras.backend.set_value(self.optimizer.learning_rate, new_lr)
+                print(f"Reducing learning rate from {old_lr:.6f} to {new_lr:.6f}")
+                wait_reduce = 0  # reset reduce wait
+    
         # Restore best weights if early stopping triggered
         if best_beta is not None:
             self.beta.assign(best_beta)
@@ -639,7 +651,7 @@ class LCKA(BaseEstimator, TransformerMixin):
 
     def plot_history(self):
       fig,ax = plt.subplots(1,figsize=(3,3))
-      ax.plot(np.arange(self.epochs),self.loss_)
+      ax.plot(np.arange(self.loss_),self.loss_)
       ax.set_xlabel('epochs')
       ax.set_ylabel('loss')
       plt.show()
