@@ -402,7 +402,8 @@ class LCKA(BaseEstimator, TransformerMixin):
     Plots the transformed data using either UMAP or t-SNE and color-coded by q values.
 
     """
-    def __init__(self,epochs=50,batch_size=100,ls_X=1e-1,ls_Y=1e-13,iAnn=2,l1=1e-3,l2=1e-3,lr=1e-3):
+    def __init__(self,epochs=50,batch_size=100,ls_X=1e-1,ls_Y=1e-13,iAnn=2,l1=1e-3,l2=1e-3,lr=1e-3,
+                 patience=30, reduce_patience=5, lr_reduce_factor=0.5, min_delta=1e-5, min_lr=1e-6):
         self.epochs = epochs
         self.batch_size = batch_size
         if isinstance(iAnn, int):
@@ -418,7 +419,11 @@ class LCKA(BaseEstimator, TransformerMixin):
         self.l1 = l1
         self.l2 = l2
         self.lr = lr
-
+        self.patience = patience
+        self.reduce_patience = reduce_patience
+        self.lr_reduce_factor = lr_reduce_factor
+        self.min_lr = min_lr
+        self.min_delta = min_delta
 
     def ComputeKernel_X(self,X):
         """
@@ -563,17 +568,17 @@ class LCKA(BaseEstimator, TransformerMixin):
         # -------------------------------
         # Early stopping variables
         best_loss = np.inf
-        patience = 30         # you can tune this
+        patience = self.patience         # you can tune this
         wait = 0
         best_beta = None
         # -------------------------------        
 
         # --- Reduce LR on Plateau setup ---
-        reduce_patience = 5     # how many epochs to wait before reducing LR
-        lr_reduce_factor = 0.5  # multiply LR by this factor
+        reduce_patience = self.reduce_patience     # how many epochs to wait before reducing LR
+        lr_reduce_factor = self.lr_reduce_factor  # multiply LR by this factor
         wait_reduce = 0
-        min_lr = 1e-6           # minimum learning rate
-        min_delta = 1e-5
+        min_lr = self.min_lr           # minimum learning rate
+        min_delta = self.min_delta
         for epoch in range(self.epochs):
             if epoch % 10 == 0:
                 print(f"Start of epoch {epoch}")
