@@ -555,6 +555,7 @@ class LCKA(BaseEstimator, TransformerMixin):
         lr_reduce_factor = 0.95  # multiply LR by this factor
         wait_reduce = 0
         min_lr = 1e-6           # minimum learning rate
+        min_delta = 1e-5
         for epoch in range(self.epochs):
             if epoch % 10 == 0:
                 print(f"Start of epoch {epoch}")
@@ -593,15 +594,14 @@ class LCKA(BaseEstimator, TransformerMixin):
             self.loss_.append(mean_loss)
 
             # Early stopping check
-            if mean_loss < best_loss - 1e-4:  # small improvement threshold
+            if mean_loss < best_loss - min_delta:  # small improvement threshold
                 best_loss = mean_loss
                 best_beta = self.beta.numpy()  # save best weights
                 wait = 0
+                wait_reduce = 0
             else:
                 wait += 1
-                if wait >= patience:
-                    print(f"Early stopping at epoch {epoch}")
-                    break
+                wait_reduce += 1
 
             # --- ReduceLROnPlateau logic ---
             if wait_reduce >= reduce_patience:
@@ -610,7 +610,10 @@ class LCKA(BaseEstimator, TransformerMixin):
                 tf.keras.backend.set_value(self.optimizer.learning_rate, new_lr)
                 print(f"Reducing learning rate from {old_lr:.6f} to {new_lr:.6f}")
                 wait_reduce = 0  # reset reduce wait
-    
+
+            if wait >= patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
         # Restore best weights if early stopping triggered
         if best_beta is not None:
             self.beta.assign(best_beta)
