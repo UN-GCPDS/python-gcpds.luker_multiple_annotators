@@ -539,7 +539,7 @@ class LCKA(BaseEstimator, TransformerMixin):
         train_data = tf.data.Dataset.from_tensor_slices((X, Y, self.iAnn, self.idx))
         train_data = train_data.shuffle(buffer_size=100).batch(batch_size).repeat(5)
 
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=tf.Variable(self.lr, dtype=tf.float64))
         self.loss_ = []
 
         # -------------------------------
