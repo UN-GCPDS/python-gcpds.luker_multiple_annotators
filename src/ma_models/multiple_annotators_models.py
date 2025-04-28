@@ -1,16 +1,33 @@
+# Standard libraries
+import os
+import pickle
+import warnings
+
+# Numerical and scientific computing
+import numpy as np
+import pandas as pd
+from scipy.special import softmax
+from scipy.spatial.distance import cdist
+
+# Machine learning models and preprocessing
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import MinMaxScaler
-import numpy as np
+from sklearn.manifold import TSNE
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
+# Deep learning and GPflow
 import tensorflow as tf
 import tensorflow_probability as tfp
+import keras
+import gpflow
+
+# Visualization
 import matplotlib.pyplot as plt
 import matplotlib
 from umap import UMAP
-from scipy.special import softmax
-from scipy.spatial.distance import cdist
-from sklearn.manifold import TSNE
-import keras
-import pickle
+
 
 class CKA(BaseEstimator, TransformerMixin):
     """Class for computing the Centered Kernel Alignment (CKA).
@@ -806,46 +823,254 @@ class LCKA(BaseEstimator, TransformerMixin):
             q2_new[~idx, ann] = calculated_q2
         return q2_new
 
+class AnnotatorGPRTrainer:
+    def __init__(self, threshold_samples=2000, inducing_points=500):
+        """
+        Parameters:
+        -----------
+        threshold_samples: int
+            Maximum number of samples to use full GPR. Above this, use sparse GP.
+        inducing_points: int
+            Number of inducing points for Sparse GP.
+        """
+        self.threshold_samples = threshold_samples
+        self.inducing_points = inducing_points
+        self.models = []  # one model per annotator (sklearn or GPflow)
+        self.model_types = []  # 'full' or 'sparse' per annotator
+
+    def train_gprs(self, X, Y_ann):
+        n_samples, n_features = X.shape
+        n_annotators = Y_ann.shape[1]
+
+        self.models = []
+        self.model_types = []
+
+        for ann in range(n_annotators):
+            print(f"Training GPR for Annotator {ann} (Samples: {n_samples})")
+
+            y = Y_ann[:, ann]
+
+            if n_samples < self.threshold_samples:
+                # Use full GPR (scikit-learn)
+                kernel = C(1.0) * RBF(length_scale=1.0)
+                gpr = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=5)
+                gpr.fit(X, y)
+
+                self.models.append(gpr)
+                self.model_types.append('full')
+
+            else:
+                # Use Sparse GP (GPflow)
+                Z_init = X[np.random.choice(n_samples, self.inducing_points, replace=False)]  # Inducing points
+                kernel = gpflow.kernels.SquaredExponential()
+
+                data = (X, y.reshape(-1,1))
+                model = gpflow.models.SGPR(data, kernel=kernel, inducing_variable=Z_init)
+
+                opt = gpflow.optimizers.Scipy()
+                opt.minimize(model.training_loss, variables=model.trainable_variables)
+
+                self.models.append(model)
+                self.model_types.append('sparse')
+
+        print(f"✅ Trained {n_annotators} GPR models.")
+
+    def predict(self, X_new):
+        preds = []
+        vars_ = []
+
+        for model, mtype in zip(self.models, self.model_types):
+            if mtype == 'full':
+                y_pred, y_std = model.predict(X_new, return_std=True)
+            else:
+                mean, var = model.predict_f(X_new)
+                y_pred = mean.numpy().flatten()
+                y_std = np.sqrt(var.numpy().flatten())
+
+            preds.append(y_pred)
+            vars_.append(y_std)
+
+        return np.stack(preds, axis=1), np.stack(vars_, axis=1)
+
+class LCKAGPR:
+    def __init__(self, lcka_params=None, gpr_params=None):
+        """
+        Initialize LCKAGPR.
+
+        Parameters:
+        -----------
+        lcka_params: dict or None
+            Parameters to initialize LCKA.
+        gpr_params: dict or None
+            Parameters to initialize AnnotatorGPRTrainer.
+        """
+        if lcka_params is None:
+            lcka_params = {}
+        if gpr_params is None:
+            gpr_params = {}
+
+        self.lcka = LCKA(**lcka_params)
+        self.gpr = AnnotatorGPRTrainer(**gpr_params)
+
+    def fit(self, X, Y):
+        """
+        Fit LCKA and GPR models.
+
+        Parameters:
+        -----------
+        X: np.ndarray
+            Input features.
+        Y: np.ndarray
+            Annotations.
+        """
+        print("Fitting LCKA...")
+        self.lcka.fit(X, Y)
+
+        print("Fitting GPRs...")
+        self.gpr.train_gprs(X, Y)
+
+    def transform(self, X):
+        """
+        Transform data using the fitted LCKA.
+
+        Parameters:
+        -----------
+        X: np.ndarray
+            Input features.
+
+        Returns:
+        --------
+        np.ndarray
+            Transformed q matrix.
+        """
+        return self.lcka.transform(X)
+
+    def predict(self, X_new):
+        """
+        Predict using GPR models.
+
+        Parameters:
+        -----------
+        X_new: np.ndarray
+            New input features.
+
+        Returns:
+        --------
+        Tuple[np.ndarray, np.ndarray]
+            Predicted means and standard deviations.
+        """
+        return self.gpr.predict(X_new)
+
+    def predict_gt(self, X_new):
+        """
+        Predict ground-truth scores by weighted averaging annotators' predictions.
+
+        Parameters:
+        -----------
+        X_new : np.ndarray
+            New input features.
+
+        Returns:
+        --------
+        np.ndarray
+            Weighted average prediction per sample.
+        """
+        preds, _ = self.predict(X_new)  # (n_samples, n_annotators)
+        weights = self.transform(X_new)  # (n_samples, n_annotators)
+
+        weighted_preds = (preds * weights).sum(axis=1)  # Weighted sum over annotators
+
+        return weighted_preds
+
     def save(self, path):
-        # Save all regular Python attributes (like q, loss_) and tf.Variable values
+        """
+        Save the whole LCKAGPR object into one .pkl file.
+
+        Parameters:
+        -----------
+        path: str
+            Path to save the object (without extension).
+        """
         data = {
-            'epochs': self.epochs,
-            'batch_size': self.batch_size,
-            'ls_X': self.ls_X.numpy(),  # TensorFlow Variable to value
-            'ls_Y': self.ls_Y.numpy(),
-            'iAnn': self.iAnn,
-            'l1': self.l1,
-            'l2': self.l2,
-            'lr': self.lr,
-            'beta': self.beta.numpy(),  # Save beta weights
-            'q': self.q,
-            'loss_': self.loss_,
+            'lcka': {
+                'epochs': self.lcka.epochs,
+                'batch_size': self.lcka.batch_size,
+                'ls_X': self.lcka.ls_X.numpy(),
+                'ls_Y': self.lcka.ls_Y.numpy(),
+                'iAnn': self.lcka.iAnn,
+                'l1': self.lcka.l1,
+                'l2': self.lcka.l2,
+                'lr': self.lcka.lr,
+                'beta': self.lcka.beta.numpy(),
+                'q': self.lcka.q,
+                'loss_': self.lcka.loss_,
+            },
+            'gpr': {
+                'threshold_samples': self.gpr.threshold_samples,
+                'inducing_points': self.gpr.inducing_points,
+                'model_types': self.gpr.model_types,
+                'models': [],
+            }
         }
-        with open(path, 'wb') as f:
+
+        for model, mtype in zip(self.gpr.models, self.gpr.model_types):
+            if mtype == 'full':
+                model_serialized = pickle.dumps(model)
+                data['gpr']['models'].append(('full', model_serialized))
+            else:
+                model_serialized = gpflow.utilities.parameter_dict(model)
+                data['gpr']['models'].append(('sparse', model_serialized))
+
+        with open(path + '.pkl', 'wb') as f:
             pickle.dump(data, f)
-            
+
     def load(self, path):
-        # Load the pickle file
-        with open(path, 'rb') as f:
+        """
+        Load a saved LCKAGPR object.
+
+        Parameters:
+        -----------
+        path: str
+            Path to the saved .pkl file (without extension).
+        """
+        with open(path + '.pkl', 'rb') as f:
             data = pickle.load(f)
-        
-        # Set back all the attributes
-        self.epochs = data['epochs']
-        self.batch_size = data['batch_size']
-        self.iAnn = data['iAnn']
-        self.N, self.R = self.iAnn.shape
-        
-        # Now recreate Variables and assign the saved values
-        self.beta = tf.Variable(data['beta'], dtype=tf.float64)
-        self.ls_X = tf.Variable(data['ls_X'], dtype=tf.float64)
-        self.ls_Y = tf.Variable(data['ls_Y'], dtype=tf.float64)
-        
-        self.idx = tf.range(1,self.N+1,dtype=tf.int64)
-        self.q = data['q']
-        self.l1 = data['l1']
-        self.l2 = data['l2']
-        self.lr = data['lr']
-        self.loss_ = data['loss_']
+
+        # Load LCKA
+        lcka_data = data['lcka']
+        self.lcka = LCKA(
+            epochs=lcka_data['epochs'],
+            batch_size=lcka_data['batch_size'],
+            ls_X=lcka_data['ls_X'],
+            ls_Y=lcka_data['ls_Y'],
+            iAnn=lcka_data['iAnn'],
+            l1=lcka_data['l1'],
+            l2=lcka_data['l2'],
+            lr=lcka_data['lr']
+        )
+        self.lcka.beta = tf.Variable(lcka_data['beta'], dtype=tf.float64)
+        self.lcka.q = lcka_data['q']
+        self.lcka.loss_ = lcka_data['loss_']
+
+        # Load GPR
+        gpr_data = data['gpr']
+        self.gpr = AnnotatorGPRTrainer(
+            threshold_samples=gpr_data['threshold_samples'],
+            inducing_points=gpr_data['inducing_points']
+        )
+        self.gpr.model_types = gpr_data['model_types']
+        self.gpr.models = []
+
+        for mtype, model_serialized in gpr_data['models']:
+            if mtype == 'full':
+                model = pickle.loads(model_serialized)
+            else:
+                kernel = gpflow.kernels.SquaredExponential()
+                model = gpflow.models.SGPR(data=(np.zeros((1,1)), np.zeros((1,1))), kernel=kernel, inducing_variable=np.zeros((1,1)))
+                gpflow.utilities.restore_model(model, model_serialized)
+            self.gpr.models.append(model)
+
+        print("Model successfully loaded.")
 
 class MA_GCCE():
  #Constructor __init__. Special method: identified by a double underscore at either side of their name
