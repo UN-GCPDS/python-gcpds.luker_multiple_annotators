@@ -1,3 +1,5 @@
+import copy
+from typing import Optional
 import tensorflow as tf
 import gpflow as gpf
 from gpflow.ci_utils import reduce_in_tests
@@ -170,24 +172,45 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
         raise NotImplementedError("Log density prediction is not required for regression tasks.")
 
 def run_adam(
-    model: gpf.models.GPModel, train_dataset: tf.data.Dataset, minibatch_size: int, iterations: int, lr: float
+    model: gpf.models.GPModel,
+    train_dataset: tf.data.Dataset,
+    minibatch_size: int,
+    iterations: int,
+    lr: float,
+    callbacks: Optional[dict] = None,
 ) -> list:
-    """Runs the Adam optimizer to train a GPflow model.
+    """Runs the Adam optimizer to train a GPflow model with built-in callbacks.
 
     Args:
         model (gpf.models.GPModel): GPflow model instance.
         train_dataset (tf.data.Dataset): Training dataset.
         minibatch_size (int): Batch size for training.
         iterations (int): Number of iterations.
-        lr (float): Learning rate.
+        lr (float): Initial learning rate.
+        callbacks (dict): Configuration for callbacks:
+            - early_stopping_patience (int)
+            - lr_patience (int)
+            - lr_factor (float)
+            - min_lr (float)
 
     Returns:
         list: ELBO values over training iterations.
     """
+    callbacks = callbacks or {}
+    early_stopping_patience = callbacks.get("early_stopping_patience", 50)
+    lr_patience = callbacks.get("lr_patience", 10)
+    lr_factor = callbacks.get("lr_factor", 0.5)
+    min_lr = callbacks.get("min_lr", 1e-6)
+
     logf = []
     train_iter = iter(train_dataset.batch(minibatch_size))
     training_loss = model.training_loss_closure(train_iter, compile=True)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+
+    best_loss = float("inf")
+    best_weights = None
+    wait_early = 0
+    wait_lr = 0
 
     for step in range(iterations):
         with tf.GradientTape() as tape:
@@ -195,10 +218,41 @@ def run_adam(
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
+        loss_val = loss.numpy()
         if step % 10 == 0:
-            logf.append(-loss.numpy())
+            logf.append(-loss_val)
+
+        # Track best model
+        if loss_val < best_loss - 1e-6:
+            best_loss = loss_val
+            best_weights = copy.deepcopy(model.trainable_variables)
+            wait_early = 0
+            wait_lr = 0
+        else:
+            wait_early += 1
+            wait_lr += 1
+
+        # Early stopping
+        if wait_early >= early_stopping_patience:
+            print(f"Early stopping at step {step}, best loss: {best_loss:.4f}")
+            break
+
+        # Reduce LR on plateau
+        if wait_lr >= lr_patience:
+            old_lr = float(optimizer.learning_rate.numpy())
+            new_lr = max(old_lr * lr_factor, min_lr)
+            if new_lr < old_lr:
+                print(f"Reducing LR from {old_lr:.6f} to {new_lr:.6f} at step {step}")
+                optimizer.learning_rate.assign(new_lr)
+            wait_lr = 0
+
+    # Restore best model
+    if best_weights is not None:
+        for var, best_var in zip(model.trainable_variables, best_weights):
+            var.assign(best_var)
 
     return logf
+
 
 def create_compiled_predict_y(model: gpf.models.GPModel, n_features: int) -> tf.function:
     """Creates a compiled TensorFlow function for efficient prediction.
