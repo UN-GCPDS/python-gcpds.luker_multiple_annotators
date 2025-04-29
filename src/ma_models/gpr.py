@@ -1,3 +1,5 @@
+import os
+import pickle
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
@@ -100,3 +102,61 @@ class SimpleGPR:
             mean = mean.numpy().flatten()
             std = np.sqrt(var.numpy().flatten())
         return mean, std
+    def save(self, path):
+        """
+        Save the SimpleGPR model to a single .pkl file.
+
+        Parameters:
+        -----------
+        path : str
+            Path without extension.
+        """
+        metadata = {
+            'threshold_samples': self.threshold_samples,
+            'inducing_points': self.inducing_points,
+            'model_type': self.model_type,
+        }
+
+        if self.model_type == 'full':
+            data = {
+                'metadata': metadata,
+                'model': self.model,
+            }
+        else:
+            params = gpflow.utilities.parameter_dict(self.model)
+            data = {
+                'metadata': metadata,
+                'params': params,
+            }
+
+        with open(path + '.pkl', 'wb') as f:
+            pickle.dump(data, f)
+
+    def load(self, path):
+        """
+        Load the SimpleGPR model from a .pkl file.
+
+        Parameters:
+        -----------
+        path : str
+            Path without extension.
+        """
+        with open(path + '.pkl', 'rb') as f:
+            data = pickle.load(f)
+
+        metadata = data['metadata']
+        self.threshold_samples = metadata['threshold_samples']
+        self.inducing_points = metadata['inducing_points']
+        self.model_type = metadata['model_type']
+
+        if self.model_type == 'full':
+            self.model = data['model']
+        else:
+            # Create a dummy SGPR model with same structure
+            kernel = gpflow.kernels.SquaredExponential()
+            self.model = gpflow.models.SGPR(
+                data=(np.zeros((1, 1)), np.zeros((1, 1))),
+                kernel=kernel,
+                inducing_variable=np.zeros((1, 1))
+            )
+            gpflow.utilities.restore_model(self.model, data['params'])
