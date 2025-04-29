@@ -1,11 +1,8 @@
 # Standard libraries
-import os
 import pickle
-import warnings
 
 # Numerical and scientific computing
 import numpy as np
-import pandas as pd
 from scipy.special import softmax
 from scipy.spatial.distance import cdist
 
@@ -13,20 +10,19 @@ from scipy.spatial.distance import cdist
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.manifold import TSNE
-from sklearn.exceptions import ConvergenceWarning
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 
 # Deep learning and GPflow
 import tensorflow as tf
 import tensorflow_probability as tfp
-import keras
 import gpflow
 
 # Visualization
 import matplotlib.pyplot as plt
 import matplotlib
 from umap import UMAP
+
+# GPR
+from gpr import AnnotatorGPRTrainer
 
 
 class CKA(BaseEstimator, TransformerMixin):
@@ -828,75 +824,6 @@ class LCKA(BaseEstimator, TransformerMixin):
             q2_new[~idx, ann] = calculated_q2
         return q2_new
 
-class AnnotatorGPRTrainer:
-    def __init__(self, threshold_samples=2000, inducing_points=500):
-        """
-        Parameters:
-        -----------
-        threshold_samples: int
-            Maximum number of samples to use full GPR. Above this, use sparse GP.
-        inducing_points: int
-            Number of inducing points for Sparse GP.
-        """
-        self.threshold_samples = threshold_samples
-        self.inducing_points = inducing_points
-        self.models = []  # one model per annotator (sklearn or GPflow)
-        self.model_types = []  # 'full' or 'sparse' per annotator
-
-    def train_gprs(self, X, Y_ann):
-        n_samples, n_features = X.shape
-        n_annotators = Y_ann.shape[1]
-
-        self.models = []
-        self.model_types = []
-
-        for ann in range(n_annotators):
-            print(f"Training GPR for Annotator {ann} (Samples: {n_samples})")
-
-            y = Y_ann[:, ann]
-
-            if n_samples < self.threshold_samples:
-                # Use full GPR (scikit-learn)
-                kernel = C(1.0) * RBF(length_scale=1.0)
-                gpr = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=5)
-                gpr.fit(X, y)
-
-                self.models.append(gpr)
-                self.model_types.append('full')
-
-            else:
-                # Use Sparse GP (GPflow)
-                Z_init = X[np.random.choice(n_samples, self.inducing_points, replace=False)]  # Inducing points
-                kernel = gpflow.kernels.SquaredExponential()
-
-                data = (X, y.reshape(-1,1))
-                model = gpflow.models.SGPR(data, kernel=kernel, inducing_variable=Z_init)
-
-                opt = gpflow.optimizers.Scipy()
-                opt.minimize(model.training_loss, variables=model.trainable_variables)
-
-                self.models.append(model)
-                self.model_types.append('sparse')
-
-        print(f"✅ Trained {n_annotators} GPR models.")
-
-    def predict(self, X_new):
-        preds = []
-        vars_ = []
-
-        for model, mtype in zip(self.models, self.model_types):
-            if mtype == 'full':
-                y_pred, y_std = model.predict(X_new, return_std=True)
-            else:
-                mean, var = model.predict_f(X_new)
-                y_pred = mean.numpy().flatten()
-                y_std = np.sqrt(var.numpy().flatten())
-
-            preds.append(y_pred)
-            vars_.append(y_std)
-
-        return np.stack(preds, axis=1), np.stack(vars_, axis=1)
-
 class LCKAGPR:
     def __init__(self, lcka_params=None, gpr_params=None):
         """
@@ -1076,103 +1003,4 @@ class LCKAGPR:
             self.gpr.models.append(model)
 
         print("Model successfully loaded.")
-
-class MA_GCCE():
- #Constructor __init__. Special method: identified by a double underscore at either side of their name
- #work in the background
- # initialize data members to the object. lets the class initialize the object’s attributes and serves no other purpose.
-    def __init__(self,epochs=100,batch_size=30,R=5, K=2, dropout=0.5, learning_rate=1e-3,optimizer='Adam',
-                  l1_param=0, validation_split=0.3, verbose=1, q = 0.1):
-        self.epochs=epochs
-        self.dropout=dropout
-        self.batch_size = batch_size
-        self.learning_rate=learning_rate
-        self.l1_param=l1_param
-        self.l2_param=l1_param
-        self.validation_split = validation_split
-        self.verbose = verbose
-        self.optimizer = optimizer
-        self.R=R
-        self.K=K
-        self.q=q
-    @keras.saving.register_keras_serializable()
-    def GCCE_MA_loss(self, y_true, y_pred):
-        # print(y_true,y_pred)
-       # q = 0.1
-        pred = y_pred[:, self.R:]
-        pred = tf.clip_by_value(pred, clip_value_min=1e-9, clip_value_max=1)
-        ann_ = y_pred[:, :self.R]
-        # ann_ = tf.clip_by_value(ann_, clip_value_min=1e-9, clip_value_max=1-1e-9)
-        Y_true = tf.one_hot(tf.cast(y_true, dtype=tf.int32), depth=self.K, axis=1)
-        Y_hat = tf.repeat(tf.expand_dims(pred,-1), self.R, axis = -1)
-
-        p_gcce = Y_true*(1 - Y_hat**self.q)/self.q
-        temp1 = ann_*tf.math.reduce_sum(p_gcce, axis=1)
-        temp2 = (1 - ann_)*(1-(1/self.K)**self.q)/self.q*tf.reduce_sum(Y_true,axis=1)
-        return tf.math.reduce_sum((temp1 + temp2))
-
-    def fit(self, X, Y):
-        #input X numpy array first dimension samples (N)x features (P)
-        #input Y numpy array vector len = samples (N) x  annotators (R)
-        if self.optimizer == "Adam":
-            opt = tf.keras.optimizers.Adam(learning_rate=self.learning_rate, clipnorm=1.0)
-        elif self.optimizer == "SGD":
-            opt = tf.keras.optimizers.SGD(learning_rate=self.learning_rate, clipnorm=1.0)
-        else:
-            opt=self.optimizer
-
-        inputs = tf.keras.layers.Input(shape=(5,), name='entrada')
-        x = tf.keras.layers.Dense(64, activation='relu')(inputs)
-        x = tf.keras.layers.Dense(64, activation='relu')(x)
-        x = tf.keras.layers.Dense(32, activation='relu')(x)
-
-        output_R = tf.keras.layers.Dense(self.R,activation="sigmoid",
-                                    kernel_regularizer=tf.keras.regularizers.l1_l2(l1=self.l1_param,l2=self.l2_param), name= 'out_R_GCCE' )(x)
-
-        output_K = tf.keras.layers.Dense(self.K,activation="softmax",
-                                    kernel_regularizer=tf.keras.regularizers.l1_l2(l1=self.l1_param,l2=self.l2_param), name= 'out_K_GCCE')(x)
-
-        output = tf.keras.layers.concatenate([output_R, output_K])
-        self.model = tf.keras.Model(inputs=inputs, outputs=output)
-        self.model.compile(loss=self.GCCE_MA_loss, optimizer=opt)
-
-        self.history = self.model.fit(X, Y, epochs=self.epochs, validation_split=self.validation_split,   #
-                                      batch_size=self.batch_size,verbose=self.verbose)
-
-        return self
-
-    def my_model(self):
-        return self.model
-
-    def predict(self, X, *_):
-       #input X numpy array first dimension samples (N)x features (P)
-      return  self.model.predict(X)
-
-    def fit_predict(self,X,y):
-        #input X numpy array first dimension samples (N)x features (P)
-        #input Y numpy array vector len = samples (N) x  annotators (R)
-        self.fit(X,y)
-        return self.predict(X)
-
-     #graphics
-    def plot_history(self):
-        pd.DataFrame(self.history.history).plot(figsize=(8, 5))
-        plt.grid(True)
-        #plt.gca().set_ylim(0, 1)
-        #save_fig("keras_learning_curves_plot")
-        plt.show()
-        return
-
-    def set_params(self, **parameters):
-        for parameter, value in parameters.items():
-            setattr(self, parameter, value)
-
-        return self
-
-    def get_config(self, deep=True):
-        return { 'l1_param':self.l1_param, 'dropout':self.dropout, 'optimizer':self.optimizer,
-                'learning_rate':self.learning_rate, 'batch_size':self.batch_size,
-                'epochs':self.epochs, 'verbose':self.verbose, 'validation_split':self.validation_split,
-                'R':self.R, 'K':self.K, 'q':self.q
-                }
 
