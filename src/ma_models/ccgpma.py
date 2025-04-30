@@ -197,8 +197,8 @@ def run_adam(
         list: ELBO values over training iterations.
     """
     callbacks = callbacks or {}
-    early_stopping_patience = callbacks.get("early_stopping_patience", 50)
-    lr_patience = callbacks.get("lr_patience", 10)
+    early_stopping_patience = callbacks.get("early_stopping_patience", 100)
+    lr_patience = callbacks.get("lr_patience", 50)
     lr_factor = callbacks.get("lr_factor", 0.5)
     min_lr = callbacks.get("min_lr", 1e-6)
 
