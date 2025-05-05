@@ -219,11 +219,10 @@ def run_adam(
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
         loss_val = loss.numpy()
-        if step % 10 == 0:
-            logf.append(-loss_val)
+        logf.append(-loss_val)
 
         # Track best model
-        if loss_val < best_loss - 1e-6:
+        if loss_val < best_loss - 1e-8:
             best_loss = loss_val
             best_weights = copy.deepcopy(model.trainable_variables)
             wait_early = 0
