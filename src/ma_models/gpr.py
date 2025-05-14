@@ -55,7 +55,7 @@ class AnnotatorGPRTrainer:
 
 
 class SimpleGPR:
-    def __init__(self, threshold_samples=2000, inducing_points=500):
+    def __init__(self, threshold_samples=2000, inducing_points=200):
         """
         GPR wrapper that uses full GPR for small datasets, and Sparse GP for large ones.
 
