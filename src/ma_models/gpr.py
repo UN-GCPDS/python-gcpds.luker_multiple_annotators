@@ -58,19 +58,11 @@ class AnnotatorGPRTrainer:
 
 
 # class SimpleGPR:
-#     def __init__(self, threshold_samples=2000, inducing_points=200):
-#         """
-#         GPR wrapper that uses full GPR for small datasets, and Sparse GP for large ones.
-
-#         Parameters:
-#         -----------
-#         threshold_samples: int
-#             Use full GPR if number of samples is below this threshold.
-#         inducing_points: int
-#             Number of inducing points for Sparse GP.
-#         """
+#     def __init__(self, threshold_samples=2000, inducing_points=100, max_iter=1200, batch_size=512):
 #         self.threshold_samples = threshold_samples
 #         self.inducing_points = inducing_points
+#         self.max_iter = max_iter
+#         self.batch_size = batch_size
 #         self.model = None
 #         self.model_type = None  # 'full' or 'sparse'
 
@@ -78,20 +70,38 @@ class AnnotatorGPRTrainer:
 #         n_samples, _ = X.shape
 
 #         if n_samples < self.threshold_samples:
-#             # Full GPR (scikit-learn)
+#             # Full GPR using sklearn
 #             kernel = C(1.0) * RBF(length_scale=1.0)
 #             gpr = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=5)
 #             gpr.fit(X, y)
 #             self.model = gpr
 #             self.model_type = 'full'
 #         else:
-#             # Sparse GP (GPflow)
+#             # Sparse GP using SVGP (GPflow)
 #             Z_init = X[np.random.choice(n_samples, self.inducing_points, replace=False)]
 #             kernel = gpflow.kernels.SquaredExponential()
-#             data = (X, y.reshape(-1, 1))
-#             model = gpflow.models.SGPR(data, kernel=kernel, inducing_variable=Z_init)
-#             opt = gpflow.optimizers.Scipy()
-#             opt.minimize(model.training_loss, variables=model.trainable_variables)
+#             likelihood = Gaussian()
+#             model = SVGP(kernel=kernel,
+#                          likelihood=likelihood,
+#                          inducing_variable=Z_init,
+#                          num_latent_gps=1)
+
+#             # Prepare mini-batch dataset
+#             dataset = tf.data.Dataset.from_tensor_slices((X.astype(np.float64), y.reshape(-1, 1).astype(np.float64)))
+#             dataset = dataset.shuffle(buffer_size=10000).batch(self.batch_size)
+
+#             opt = tf.optimizers.Adam(learning_rate=0.01)
+
+#             # Custom training loop
+#             for step, batch in enumerate(dataset.repeat()):
+#                 with tf.GradientTape() as tape:
+#                     loss = -model.elbo(batch)
+#                 grads = tape.gradient(loss, model.trainable_variables)
+#                 opt.apply_gradients(zip(grads, model.trainable_variables))
+
+#                 if step >= self.max_iter:
+#                     break
+
 #             self.model = model
 #             self.model_type = 'sparse'
 
@@ -101,7 +111,7 @@ class AnnotatorGPRTrainer:
 #         if self.model_type == 'full':
 #             mean, std = self.model.predict(X_new, return_std=True)
 #         else:
-#             mean, var = self.model.predict_f(X_new)
+#             mean, var = self.model.predict_f(X_new.astype(np.float64))
 #             mean = mean.numpy().flatten()
 #             std = np.sqrt(var.numpy().flatten())
 #         return mean, std
@@ -164,119 +174,95 @@ class AnnotatorGPRTrainer:
 #             )
 #             gpflow.utilities.restore_model(self.model, data['params'])
 
+
 class SimpleGPR:
-    def __init__(self, threshold_samples=2000, inducing_points=200, max_iter=1000, batch_size=128):
-        self.threshold_samples = threshold_samples
+    def __init__(self, inducing_points=100, max_iter=1200, batch_size=512):
         self.inducing_points = inducing_points
         self.max_iter = max_iter
         self.batch_size = batch_size
         self.model = None
-        self.model_type = None  # 'full' or 'sparse'
+        self.model_type = 'sparse'  # Always 'sparse'
 
     def fit(self, X, y):
         n_samples, _ = X.shape
 
-        if n_samples < self.threshold_samples:
-            # Full GPR using sklearn
-            kernel = C(1.0) * RBF(length_scale=1.0)
-            gpr = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=5)
-            gpr.fit(X, y)
-            self.model = gpr
-            self.model_type = 'full'
-        else:
-            # Sparse GP using SVGP (GPflow)
-            Z_init = X[np.random.choice(n_samples, self.inducing_points, replace=False)]
-            kernel = gpflow.kernels.SquaredExponential()
-            likelihood = Gaussian()
-            model = SVGP(kernel=kernel,
-                         likelihood=likelihood,
-                         inducing_variable=Z_init,
-                         num_latent_gps=1)
+        # Initialize inducing points
+        Z_init = X[np.random.choice(n_samples, self.inducing_points, replace=False)]
 
-            # Prepare mini-batch dataset
-            dataset = tf.data.Dataset.from_tensor_slices((X.astype(np.float64), y.reshape(-1, 1).astype(np.float64)))
-            dataset = dataset.shuffle(buffer_size=10000).batch(self.batch_size)
+        kernel = gpflow.kernels.SquaredExponential()
+        likelihood = Gaussian()
 
-            opt = tf.optimizers.Adam(learning_rate=0.01)
+        model = SVGP(
+            kernel=kernel,
+            likelihood=likelihood,
+            inducing_variable=Z_init,
+            num_latent_gps=1
+        )
 
-            # Custom training loop
-            for step, batch in enumerate(dataset.repeat()):
-                with tf.GradientTape() as tape:
-                    loss = -model.elbo(batch)
-                grads = tape.gradient(loss, model.trainable_variables)
-                opt.apply_gradients(zip(grads, model.trainable_variables))
+        # Create mini-batch dataset
+        dataset = tf.data.Dataset.from_tensor_slices((X.astype(np.float64), y.reshape(-1, 1).astype(np.float64)))
+        dataset = dataset.shuffle(buffer_size=10000).batch(self.batch_size)
 
-                if step >= self.max_iter:
-                    break
+        opt = tf.optimizers.Adam(learning_rate=0.01)
 
-            self.model = model
-            self.model_type = 'sparse'
+        # Training loop
+        for step, batch in enumerate(dataset.repeat()):
+            with tf.GradientTape() as tape:
+                loss = -model.elbo(batch)
+            grads = tape.gradient(loss, model.trainable_variables)
+            opt.apply_gradients(zip(grads, model.trainable_variables))
 
-        print(f"✅ Trained {self.model_type.upper()} GPR model.")
+            if step >= self.max_iter:
+                break
+
+        self.model = model
+        print("✅ Trained SPARSE GPR model.")
 
     def predict(self, X_new):
-        if self.model_type == 'full':
-            mean, std = self.model.predict(X_new, return_std=True)
-        else:
-            mean, var = self.model.predict_f(X_new.astype(np.float64))
-            mean = mean.numpy().flatten()
-            std = np.sqrt(var.numpy().flatten())
+        mean, var = self.model.predict_f(X_new.astype(np.float64))
+        mean = mean.numpy().flatten()
+        std = np.sqrt(var.numpy().flatten())
         return mean, std
+
     def save(self, path):
         """
-        Save the SimpleGPR model to a single .pkl file.
-
-        Parameters:
-        -----------
-        path : str
-            Path without extension.
+        Save the SVGP model to a .pkl file.
         """
         metadata = {
-            'threshold_samples': self.threshold_samples,
             'inducing_points': self.inducing_points,
             'model_type': self.model_type,
         }
 
-        if self.model_type == 'full':
-            data = {
-                'metadata': metadata,
-                'model': self.model,
-            }
-        else:
-            params = gpflow.utilities.parameter_dict(self.model)
-            data = {
-                'metadata': metadata,
-                'params': params,
-            }
+        params = gpflow.utilities.parameter_dict(self.model)
+        data = {
+            'metadata': metadata,
+            'params': params,
+        }
 
         with open(path + '.pkl', 'wb') as f:
             pickle.dump(data, f)
 
     def load(self, path):
         """
-        Load the SimpleGPR model from a .pkl file.
-
-        Parameters:
-        -----------
-        path : str
-            Path without extension.
+        Load the SVGP model from a .pkl file.
         """
         with open(path + '.pkl', 'rb') as f:
             data = pickle.load(f)
 
         metadata = data['metadata']
-        self.threshold_samples = metadata['threshold_samples']
         self.inducing_points = metadata['inducing_points']
         self.model_type = metadata['model_type']
 
-        if self.model_type == 'full':
-            self.model = data['model']
-        else:
-            # Create a dummy SGPR model with same structure
-            kernel = gpflow.kernels.SquaredExponential()
-            self.model = gpflow.models.SGPR(
-                data=(np.zeros((1, 1)), np.zeros((1, 1))),
-                kernel=kernel,
-                inducing_variable=np.zeros((1, 1))
-            )
-            gpflow.utilities.restore_model(self.model, data['params'])
+        # Dummy model for restoring parameters
+        kernel = gpflow.kernels.SquaredExponential()
+        dummy_data = (np.zeros((1, 1)), np.zeros((1, 1)))
+        inducing_variable = np.zeros((1, 1))
+
+        self.model = SVGP(
+            kernel=kernel,
+            likelihood=Gaussian(),
+            inducing_variable=inducing_variable,
+            num_latent_gps=1
+        )
+
+        gpflow.utilities.restore_model(self.model, data['params'])
