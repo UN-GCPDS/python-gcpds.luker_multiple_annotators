@@ -135,7 +135,7 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
             axis=1
         )
 
-        return tf.reshape(var_exp, (N, 1))
+        return var_exp
 
     def _predict_mean_and_var(self, X: tf.Tensor, Fmu: tf.Tensor, Fvar: tf.Tensor) -> tuple:
         """Computes predictive mean and variance for multi-annotator regression.
