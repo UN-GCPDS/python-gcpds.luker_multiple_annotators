@@ -52,7 +52,7 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
         R (int): Number of annotators.
     """
 
-    def __init__(self, num_ann: int) -> None:
+    def __init__(self, num_ann: int, missing_value: float = -1e20) -> None:
         """Initializes the multi-annotator Gaussian likelihood model.
 
         Args:
@@ -60,10 +60,10 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
         """
         super().__init__(input_dim=None, latent_dim=1 + num_ann, observation_dim=None)
         self.R = num_ann  # Store the number of annotators
-        self.missing_value = -1e20
+        self.missing_value = missing_value
 
     def _get_iAnn(self, Y):
-        return tf.cast(tf.experimental.numpy(Y, self.missing_value), tf.float32)
+        return tf.cast(tf.experimental.numpy.not_equal(Y, self.missing_value), tf.float32)
 
     @inherit_check_shapes
     def _log_prob(self, X: tf.Tensor, F: tf.Tensor, Y: tf.Tensor) -> tf.Tensor:
