@@ -255,7 +255,6 @@ class SimpleGPR:
 
         # Dummy model for restoring parameters
         kernel = gpflow.kernels.SquaredExponential()
-        dummy_data = (np.zeros((1, 1)), np.zeros((1, 1)))
         inducing_variable = np.zeros((1, 1))
 
         self.model = SVGP(
