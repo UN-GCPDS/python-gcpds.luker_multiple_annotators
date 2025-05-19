@@ -60,6 +60,10 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
         """
         super().__init__(input_dim=None, latent_dim=1 + num_ann, observation_dim=None)
         self.R = num_ann  # Store the number of annotators
+        self.missing_value = -1e20
+
+    def _get_iAnn(self, Y):
+        return tf.cast(tf.experimental.numpy(Y, self.missing_value), tf.float32)
 
     @inherit_check_shapes
     def _log_prob(self, X: tf.Tensor, F: tf.Tensor, Y: tf.Tensor) -> tf.Tensor:
@@ -74,7 +78,7 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
             tf.Tensor: Log probability of Y given F.
         """
         # Create a mask to filter out missing annotations (-1e20 used as a missing label indicator)
-        iAnn = tf.where(Y == -1e20, tf.zeros_like(Y), tf.ones_like(Y))
+        iAnn = tf.cast(self._get_iAnn(Y), tf.float32)
 
         # Convert inputs to float32 for numerical stability
         F = tf.cast(F, tf.float32)
@@ -90,6 +94,7 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
             axis=1
         )
         return log_prob
+
 
     def _variational_expectations(
         self, X: tf.Tensor, Fmu: tf.Tensor, Fvar: tf.Tensor, Y: tf.Tensor, Y_metadata=None
@@ -110,7 +115,7 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
         X, Fmu, Fvar, Y = map(tf.cast, [X, Fmu, Fvar, Y], [tf.float32] * 4)
 
         N = tf.shape(Y)[0]  # Number of samples
-        iAnn = tf.cast(Y_metadata, tf.float32) if Y_metadata is not None else tf.ones_like(Y)
+        iAnn = self._get_iAnn(Y)
 
         # Extract mean and variance components
         m_fmean, m_fvar = Fmu[:, :1], Fmu[:, 1:]  # Mean function, variance function
