@@ -78,7 +78,7 @@ class MultiAnnotatorGaussian(gpf.likelihoods.Likelihood):
             tf.Tensor: Log probability of Y given F.
         """
         # Create a mask to filter out missing annotations (-1e20 used as a missing label indicator)
-        iAnn = tf.cast(self._get_iAnn(Y), tf.float32)
+        iAnn = self._get_iAnn(Y)
 
         # Convert inputs to float32 for numerical stability
         F = tf.cast(F, tf.float32)
