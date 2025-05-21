@@ -5,6 +5,8 @@ import gpflow
 from gpflow.likelihoods import Gaussian
 from gpflow.models import SVGP
 import tensorflow as tf
+from sklearn.cluster import MiniBatchKMeans
+from tensorflow.keras import mixed_precision
 
 class AnnotatorGPRTrainer:
     def __init__(self, threshold_samples=2000, inducing_points=500):
@@ -222,7 +224,9 @@ class SimpleGPR:
         y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
         n_samples, _ = X.shape
 
-        Z_init = X[self.rng.choice(n_samples, self.inducing_points, replace=False)]
+        kmeans = MiniBatchKMeans(n_clusters=self.inducing_points, batch_size=1024, random_state=42).fit(X)
+        Z_init = kmeans.cluster_centers_
+
 
         kernel = gpflow.kernels.SquaredExponential()
         likelihood = Gaussian()
