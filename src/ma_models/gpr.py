@@ -1,8 +1,6 @@
-import os
 import pickle
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+from tensorflow.keras import mixed_precision
 import gpflow
 from gpflow.likelihoods import Gaussian
 from gpflow.models import SVGP
@@ -174,94 +172,149 @@ class AnnotatorGPRTrainer:
 #             )
 #             gpflow.utilities.restore_model(self.model, data['params'])
 
+# -----------------------------------------------------------------------------
+# Global numerical settings
+# -----------------------------------------------------------------------------
+# Use single‑precision everywhere to lower memory consumption and improve speed
+# on compatible hardware (e.g. consumer GPUs with larger FP32 throughput).
+# ----------------------------------------------------------------------------
+
+gpflow.config.set_default_float(tf.float32)             # GPflow in float32
+mixed_precision.set_global_policy("mixed_float16")     # Auto FP16 compute, FP32 vars
+
 
 class SimpleGPR:
-    def __init__(self, inducing_points=100, max_iter=1200, batch_size=512):
+    """Sparse variational Gaussian‑process regressor (SVGP) in float32.
+
+    *   **Single precision** (`tf.float32`) greatly reduces memory footprint and
+        bandwidth, which is crucial for very large datasets.
+    *   **Mixed‑precision** (policy `mixed_float16`) leverages tensor‑core
+        hardware where available; most computations execute in float16 while
+        model parameters remain in float32 for numerical stability.
+    *   Early stopping monitors the *full* ELBO every `monitor_every` steps.
+    """
+
+    def __init__(
+        self,
+        inducing_points: int = 200,
+        max_iter: int = 1000,
+        batch_size: int = 128,
+        early_stop_patience: int = 20,
+        early_stop_min_delta: float = 1e-3,
+        learning_rate: float = 1e-2,
+        monitor_every: int = 5,
+        seed: int | None = None,
+    ) -> None:
         self.inducing_points = inducing_points
         self.max_iter = max_iter
         self.batch_size = batch_size
-        self.model = None
-        self.model_type = 'sparse'  # Always 'sparse'
+        self.early_stop_patience = early_stop_patience
+        self.early_stop_min_delta = early_stop_min_delta
+        self.learning_rate = learning_rate
+        self.monitor_every = monitor_every
+        self.rng = np.random.default_rng(seed)
 
-    def fit(self, X, y):
+        self.model: SVGP | None = None
+
+    # ------------------------------------------------------------------
+    # Training
+    # ------------------------------------------------------------------
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
+        """Fit the sparse GP to training data (expects `float32`)."""
+        X = np.asarray(X, dtype=np.float32)
+        y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
         n_samples, _ = X.shape
 
-        # Initialize inducing points
-        Z_init = X[np.random.choice(n_samples, self.inducing_points, replace=False)]
+        Z_init = X[self.rng.choice(n_samples, self.inducing_points, replace=False)]
 
         kernel = gpflow.kernels.SquaredExponential()
         likelihood = Gaussian()
-
-        model = SVGP(
+        self.model = SVGP(
             kernel=kernel,
             likelihood=likelihood,
             inducing_variable=Z_init,
-            num_latent_gps=1
+            num_latent_gps=1,
         )
 
-        # Create mini-batch dataset
-        dataset = tf.data.Dataset.from_tensor_slices((X.astype(np.float64), y.reshape(-1, 1).astype(np.float64)))
-        dataset = dataset.shuffle(buffer_size=10000).batch(self.batch_size)
+        dataset = (
+            tf.data.Dataset.from_tensor_slices((X, y))
+            .shuffle(buffer_size=min(10_000, n_samples), seed=self.rng.integers(1 << 31))
+            .batch(self.batch_size)
+            .repeat()
+        )
+        data_iter = iter(dataset)
 
-        opt = tf.optimizers.Adam(learning_rate=0.01)
+        opt = tf.optimizers.Adam(self.learning_rate)
 
-        # Training loop
-        for step, batch in enumerate(dataset.repeat()):
+        best_elbo = -np.inf
+        patience = 0
+
+        for step in range(1, self.max_iter + 1):
+            batch = next(data_iter)
             with tf.GradientTape() as tape:
-                loss = -model.elbo(batch)
-            grads = tape.gradient(loss, model.trainable_variables)
-            opt.apply_gradients(zip(grads, model.trainable_variables))
+                elbo = self.model.elbo(batch)
+                loss = -elbo  # maximise ELBO == minimise -ELBO
+            grads = tape.gradient(loss, self.model.trainable_variables)
+            opt.apply_gradients(zip(grads, self.model.trainable_variables))
 
-            if step >= self.max_iter:
-                break
+            # ---------- early‑stopping monitor ----------
+            if step % self.monitor_every == 0:
+                current_elbo = self.model.elbo((X, y)).numpy()
+                improvement = current_elbo - best_elbo
+                if improvement > self.early_stop_min_delta:
+                    best_elbo = current_elbo
+                    patience = 0
+                else:
+                    patience += 1
+                if patience >= self.early_stop_patience:
+                    print(f"⏹️  Early stopping at step {step}. Best ELBO = {best_elbo:.3f}")
+                    break
+        else:
+            print("⚠️  Reached max_iter without early stopping.")
 
-        self.model = model
-        print("✅ Trained SPARSE GPR model.")
+        print("✅ Trained SPARSE GPR model (float32 / mixed precision).")
 
-    def predict(self, X_new):
-        mean, var = self.model.predict_f(X_new.astype(np.float64))
-        mean = mean.numpy().flatten()
-        std = np.sqrt(var.numpy().flatten())
-        return mean, std
+    # ------------------------------------------------------------------
+    # Prediction
+    # ------------------------------------------------------------------
+    def predict(self, X_new: np.ndarray):
+        """Posterior mean & standard deviation at `X_new` (returned as float32)."""
+        if self.model is None:
+            raise ValueError("Model has not been trained. Call `fit` first.")
 
-    def save(self, path):
-        """
-        Save the SVGP model to a .pkl file.
-        """
-        metadata = {
-            'inducing_points': self.inducing_points,
-            'model_type': self.model_type,
-        }
+        mean, var = self.model.predict_f(np.asarray(X_new, dtype=np.float32))
+        return mean.numpy().flatten().astype(np.float32), np.sqrt(var.numpy().flatten()).astype(np.float32)
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+    def save(self, path: str) -> None:
+        """Serialise the model parameters to `<path>.pkl`."""
+        if self.model is None:
+            raise ValueError("Model has not been trained. Nothing to save.")
 
         params = gpflow.utilities.parameter_dict(self.model)
-        data = {
-            'metadata': metadata,
-            'params': params,
+        metadata = {
+            "inducing_points": self.inducing_points,
+            "dtype": "float32",
+            "policy": mixed_precision.global_policy().name,
         }
+        with open(path + ".pkl", "wb") as f:
+            pickle.dump({"metadata": metadata, "params": params}, f)
 
-        with open(path + '.pkl', 'wb') as f:
-            pickle.dump(data, f)
-
-    def load(self, path):
-        """
-        Load the SVGP model from a .pkl file.
-        """
-        with open(path + '.pkl', 'rb') as f:
+    def load(self, path: str) -> None:
+        """Load model parameters from `<path>.pkl` (re‑creates float32 model)."""
+        with open(path + ".pkl", "rb") as f:
             data = pickle.load(f)
 
-        metadata = data['metadata']
-        self.inducing_points = metadata['inducing_points']
-        self.model_type = metadata['model_type']
-
-        # Dummy model for restoring parameters
         kernel = gpflow.kernels.SquaredExponential()
-        inducing_variable = np.zeros((1, 1))
-
+        dummy_X = np.zeros((1, 1), dtype=np.float32)
+        inducing_Z = np.zeros((1, 1), dtype=np.float32)
         self.model = SVGP(
             kernel=kernel,
             likelihood=Gaussian(),
-            inducing_variable=inducing_variable,
-            num_latent_gps=1
+            inducing_variable=inducing_Z,
+            num_latent_gps=1,
         )
-
-        gpflow.utilities.restore_model(self.model, data['params'])
+        gpflow.utilities.restore_model(self.model, data["params"])
+        print("✅ Model parameters restored (float32 / mixed precision).")
