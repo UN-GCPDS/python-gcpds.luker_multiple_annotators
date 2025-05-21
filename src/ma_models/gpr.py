@@ -1,6 +1,6 @@
 import pickle
 import numpy as np
-from tensorflow.keras import mixed_precision
+# from tensorflow.keras import mixed_precision
 import gpflow
 from gpflow.likelihoods import Gaussian
 from gpflow.models import SVGP
