@@ -8,6 +8,7 @@ import tensorflow as tf
 from sklearn.cluster import MiniBatchKMeans
 from tensorflow.keras import mixed_precision
 gpflow.config.set_default_float(tf.float32)
+gpflow.config.set_default_jitter(1e-6)
 
 
 class AnnotatorGPRTrainer:
