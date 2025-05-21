@@ -252,6 +252,7 @@ class SimpleGPR:
 
         best_elbo = -np.inf
         patience = 0
+        self.elbo_history = []
 
         for step in range(1, self.max_iter + 1):
             batch = next(data_iter)
@@ -264,6 +265,7 @@ class SimpleGPR:
             # ---------- early‑stopping monitor ----------
             if step % self.monitor_every == 0:
                 current_elbo = self.model.elbo((X, y)).numpy()
+                self.elbo_history.append(current_elbo)
                 improvement = current_elbo - best_elbo
                 if improvement > self.early_stop_min_delta:
                     best_elbo = current_elbo
