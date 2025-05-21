@@ -179,9 +179,6 @@ class AnnotatorGPRTrainer:
 # on compatible hardware (e.g. consumer GPUs with larger FP32 throughput).
 # ----------------------------------------------------------------------------
 
-gpflow.config.set_default_float(tf.float32)             # GPflow in float32
-mixed_precision.set_global_policy("mixed_float16")     # Auto FP16 compute, FP32 vars
-
 
 class SimpleGPR:
     """Sparse variational Gaussian‑process regressor (SVGP) in float32.
