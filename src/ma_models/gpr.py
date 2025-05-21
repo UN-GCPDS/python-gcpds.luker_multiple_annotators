@@ -7,6 +7,8 @@ from gpflow.models import SVGP
 import tensorflow as tf
 from sklearn.cluster import MiniBatchKMeans
 from tensorflow.keras import mixed_precision
+gpflow.config.set_default_float(tf.float32)
+
 
 class AnnotatorGPRTrainer:
     def __init__(self, threshold_samples=2000, inducing_points=500):
