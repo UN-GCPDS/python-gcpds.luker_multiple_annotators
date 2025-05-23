@@ -6,6 +6,7 @@ from gpflow.ci_utils import reduce_in_tests
 from gpflow.utilities import print_summary
 from check_shapes import check_shapes, inherit_check_shapes
 import numpy as np
+gpflow.config.set_default_jitter(1e-4)
 
 # Set the maximum number of iterations for training, reducing it in tests for efficiency
 MAXITER = reduce_in_tests(500)
