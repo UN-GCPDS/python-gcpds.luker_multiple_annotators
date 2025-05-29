@@ -24,7 +24,7 @@ class AnnotatorGPRTrainer:
 
     def __init__(
         self,
-        inducing_points: int = 500,
+        inducing_points: int = 200,
         max_iter: int = 1_000,
         batch_size: int = 128,
         early_stop_patience: int = 20,
