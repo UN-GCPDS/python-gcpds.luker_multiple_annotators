@@ -19,7 +19,7 @@ import gpflow
 # Visualization
 import matplotlib.pyplot as plt
 import matplotlib
-from umap import UMAP
+# from umap import UMAP
 
 # GPR
 from gpr import AnnotatorGPRTrainer
@@ -771,55 +771,55 @@ class LCKA(BaseEstimator, TransformerMixin):
         plt.show()
         return q
 
-    def plot_lckaQ(self,X,q, redlcka='umap',random_state=123,n_neighbors=10,cmap='Reds',annotators=None):
-        """
-        Parameters:
-        -----------
-        X: array-like of shape (n_samples, n_features)
-            Input features.
-        q: array-like of shape (n_samples, n_annotators)
-            Transformed data.
-        redlcka: {'umap', 'tsne'}, default='umap'
-            Reduction method to use.
-        random_state: int, default=123
-            Random state for reproducibility.
-        n_neighbors: int, default=10
-            Number of neighbors to consider for UMAP or t-SNE.
-        cmap: str, default='Reds'
-            Colormap to use.
+    # def plot_lckaQ(self,X,q, redlcka='umap',random_state=123,n_neighbors=10,cmap='Reds',annotators=None):
+    #     """
+    #     Parameters:
+    #     -----------
+    #     X: array-like of shape (n_samples, n_features)
+    #         Input features.
+    #     q: array-like of shape (n_samples, n_annotators)
+    #         Transformed data.
+    #     redlcka: {'umap', 'tsne'}, default='umap'
+    #         Reduction method to use.
+    #     random_state: int, default=123
+    #         Random state for reproducibility.
+    #     n_neighbors: int, default=10
+    #         Number of neighbors to consider for UMAP or t-SNE.
+    #     cmap: str, default='Reds'
+    #         Colormap to use.
 
-        Returns:
-        --------
-        None
-        """
-        if redlcka == 'umap':
-            red_ = UMAP(n_components = 2, n_neighbors = n_neighbors,min_dist =0.9,random_state=random_state)
-        else:
-            red_ = TSNE(n_components = 2, perplexity = n_neighbors, random_state=random_state)
-        X_ = MinMaxScaler().fit_transform(X)
-        Z = red_.fit_transform(X_)
-        R = q.shape[1]
+    #     Returns:
+    #     --------
+    #     None
+    #     """
+    #     if redlcka == 'umap':
+    #         red_ = UMAP(n_components = 2, n_neighbors = n_neighbors,min_dist =0.9,random_state=random_state)
+    #     else:
+    #         red_ = TSNE(n_components = 2, perplexity = n_neighbors, random_state=random_state)
+    #     X_ = MinMaxScaler().fit_transform(X)
+    #     Z = red_.fit_transform(X_)
+    #     R = q.shape[1]
 
-        fig,ax = plt.subplots(nrows = 1,ncols=R,figsize=(4*(R),3))
-        if annotators is None:
-            for r in range(R):
-                ax[r].scatter(Z[:,0],Z[:,1],c=q[:,r],vmin=q.ravel().min(),vmax=q.ravel().max(),cmap=cmap)
-                ax[r].set_title(f"A{r+1} - qm = {q[:,r].ravel().mean().round(2)}")
-                ax[r].set_xticks([])
-                ax[r].set_yticks([])
-        else:
-            for r, ann in enumerate(annotators):
-                ax[r].scatter(Z[:,0],Z[:,1],c=q[:,r],vmin=q.ravel().min(),vmax=q.ravel().max(),cmap=cmap)
-                ax[r].set_title(f"A{ann} - qmean = {q[:,r].ravel().mean().round(2)}\n qmed = {np.median(q[:,r].ravel()).round(2)}")
-                ax[r].set_xticks([])
-                ax[r].set_yticks([])
+    #     fig,ax = plt.subplots(nrows = 1,ncols=R,figsize=(4*(R),3))
+    #     if annotators is None:
+    #         for r in range(R):
+    #             ax[r].scatter(Z[:,0],Z[:,1],c=q[:,r],vmin=q.ravel().min(),vmax=q.ravel().max(),cmap=cmap)
+    #             ax[r].set_title(f"A{r+1} - qm = {q[:,r].ravel().mean().round(2)}")
+    #             ax[r].set_xticks([])
+    #             ax[r].set_yticks([])
+    #     else:
+    #         for r, ann in enumerate(annotators):
+    #             ax[r].scatter(Z[:,0],Z[:,1],c=q[:,r],vmin=q.ravel().min(),vmax=q.ravel().max(),cmap=cmap)
+    #             ax[r].set_title(f"A{ann} - qmean = {q[:,r].ravel().mean().round(2)}\n qmed = {np.median(q[:,r].ravel()).round(2)}")
+    #             ax[r].set_xticks([])
+    #             ax[r].set_yticks([])
 
-        cax = fig.add_axes([0.925, 0.15, 0.01, 0.7])
-        norm = matplotlib.colors.Normalize(vmin=q.ravel().min(),vmax=q.ravel().max())
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        cbar = plt.colorbar(sm,cax=cax)
-        plt.show()
+    #     cax = fig.add_axes([0.925, 0.15, 0.01, 0.7])
+    #     norm = matplotlib.colors.Normalize(vmin=q.ravel().min(),vmax=q.ravel().max())
+    #     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    #     sm.set_array([])
+    #     cbar = plt.colorbar(sm,cax=cax)
+    #     plt.show()
     
 class LCKAGPR:
     def __init__(self, lcka_params=None, gpr_params=None):
