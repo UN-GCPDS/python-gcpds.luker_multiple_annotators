@@ -33,7 +33,7 @@ class AnnotatorGPRTrainer:
         monitor_every: int = 5,
         seed: Optional[int] = None,
     ) -> None:
-        # self.inducing_points = inducing_points
+        self.inducing_points = inducing_points
         self.max_iter = max_iter
         self.batch_size = batch_size
         self.early_stop_patience = early_stop_patience
