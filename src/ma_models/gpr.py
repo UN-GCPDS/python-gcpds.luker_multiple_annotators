@@ -5,6 +5,7 @@ import gpflow
 from gpflow.likelihoods import Gaussian
 from gpflow.models import SVGP
 import tensorflow as tf
+from typing import List, Optional
 from sklearn.cluster import MiniBatchKMeans
 from tensorflow.keras import mixed_precision
 gpflow.config.set_default_float(tf.float32)
@@ -12,177 +13,141 @@ gpflow.config.set_default_jitter(1e-4)
 
 
 class AnnotatorGPRTrainer:
-    def __init__(self, threshold_samples=2000, inducing_points=500):
-        """
-        Parameters:
-        -----------
-        threshold_samples: int
-            Maximum number of samples to use full GPR. Above this, use sparse GP.
-        inducing_points: int
-            Number of inducing points for Sparse GP.
-        """
-        self.threshold_samples = threshold_samples
-        self.inducing_points = inducing_points
-        self.models = []  # one model per annotator (sklearn or GPflow)
-        self.model_types = []  # 'full' or 'sparse' per annotator
+    """Train a separate *sparse* Gaussian‑process regressor (``SimpleGPR``) for
+    each human annotator.
 
-    def train_gprs(self, X, Y_ann):
-        n_samples, n_features = X.shape
+    The original implementation toggled between *full* and *sparse* GPs based on
+    the dataset size. Since ``SimpleGPR`` now implements **only** the sparse
+    variational formulation, this trainer no longer needs to handle the
+    threshold logic.
+    """
+
+    def __init__(
+        self,
+        inducing_points: int = 500,
+        max_iter: int = 1_000,
+        batch_size: int = 128,
+        early_stop_patience: int = 20,
+        early_stop_min_delta: float = 1e-3,
+        learning_rate: float = 1e-2,
+        monitor_every: int = 5,
+        seed: Optional[int] = None,
+    ) -> None:
+        self.inducing_points = inducing_points
+        self.max_iter = max_iter
+        self.batch_size = batch_size
+        self.early_stop_patience = early_stop_patience
+        self.early_stop_min_delta = early_stop_min_delta
+        self.learning_rate = learning_rate
+        self.monitor_every = monitor_every
+        self.seed = seed
+
+        self.models: List["SimpleGPR"] = []
+
+    # ------------------------------------------------------------------
+    # Training
+    # ------------------------------------------------------------------
+    def train_gprs(self, X: np.ndarray, Y_ann: np.ndarray) -> None:
+        """Fit one :class:`SimpleGPR` per annotator.
+
+        Parameters
+        ----------
+        X : array‑like, shape (n_samples, n_features)
+            Shared input space for *all* annotators.
+
+        Y_ann : array‑like, shape (n_samples, n_annotators)
+            Column *j* contains the labels provided by annotator *j*.
+        """
+        n_samples, _ = X.shape
         n_annotators = Y_ann.shape[1]
 
         self.models = []
-        self.model_types = []
 
         for ann in range(n_annotators):
-            print(f"Training GPR for Annotator {ann} (Samples: {n_samples})")
+            print(f"Training SPARSE GPR for Annotator {ann} (Samples: {n_samples})")
             y = Y_ann[:, ann]
 
             gpr_model = SimpleGPR(
-                threshold_samples=self.threshold_samples,
-                inducing_points=self.inducing_points
+                inducing_points=self.inducing_points,
+                max_iter=self.max_iter,
+                batch_size=self.batch_size,
+                early_stop_patience=self.early_stop_patience,
+                early_stop_min_delta=self.early_stop_min_delta,
+                learning_rate=self.learning_rate,
+                monitor_every=self.monitor_every,
+                seed=self.seed,
             )
             gpr_model.fit(X, y)
-
             self.models.append(gpr_model)
-            self.model_types.append(gpr_model.model_type)
 
-        print(f"Trained {n_annotators} GPR models.")
+        print(f"\u2705 Trained {n_annotators} sparse GPR models.")
 
-    def predict(self, X_new):
-        preds = []
-        vars_ = []
+    # ------------------------------------------------------------------
+    # Prediction
+    # ------------------------------------------------------------------
+    def predict(self, X_new: np.ndarray):
+        """Posterior mean and standard deviation for every annotator.
 
-        for model in self.models:
-            mean, std = model.predict(X_new)
-            preds.append(mean)
-            vars_.append(std)
+        Returns
+        -------
+        means : ndarray, shape (n_samples, n_annotators)
+        stds  : ndarray, shape (n_samples, n_annotators)
+        """
+        if not self.models:
+            raise ValueError("No models present. Call `train_gprs` or `load` first.")
 
+        preds, vars_ = zip(*(model.predict(X_new) for model in self.models))
         return np.stack(preds, axis=1), np.stack(vars_, axis=1)
 
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+    def save(self, directory: str) -> None:
+        """Serialise the trainer and all underlying models.
 
-# class SimpleGPR:
-#     def __init__(self, threshold_samples=2000, inducing_points=100, max_iter=1200, batch_size=512):
-#         self.threshold_samples = threshold_samples
-#         self.inducing_points = inducing_points
-#         self.max_iter = max_iter
-#         self.batch_size = batch_size
-#         self.model = None
-#         self.model_type = None  # 'full' or 'sparse'
+        * Each :class:`SimpleGPR` is saved to ``<directory>/annotator_{i}.pkl``.
+        * Trainer‑level metadata is written to ``trainer_meta.pkl``.
+        """
+        os.makedirs(directory, exist_ok=True)
 
-#     def fit(self, X, y):
-#         n_samples, _ = X.shape
+        meta = {
+            "n_annotators": len(self.models),
+            "inducing_points": self.inducing_points,
+        }
 
-#         if n_samples < self.threshold_samples:
-#             # Full GPR using sklearn
-#             kernel = C(1.0) * RBF(length_scale=1.0)
-#             gpr = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=5)
-#             gpr.fit(X, y)
-#             self.model = gpr
-#             self.model_type = 'full'
-#         else:
-#             # Sparse GP using SVGP (GPflow)
-#             Z_init = X[np.random.choice(n_samples, self.inducing_points, replace=False)]
-#             kernel = gpflow.kernels.SquaredExponential()
-#             likelihood = Gaussian()
-#             model = SVGP(kernel=kernel,
-#                          likelihood=likelihood,
-#                          inducing_variable=Z_init,
-#                          num_latent_gps=1)
+        # save each annotator model
+        for idx, model in enumerate(self.models):
+            model_path = os.path.join(directory, f"annotator_{idx}")
+            model.save(model_path)
 
-#             # Prepare mini-batch dataset
-#             dataset = tf.data.Dataset.from_tensor_slices((X.astype(np.float64), y.reshape(-1, 1).astype(np.float64)))
-#             dataset = dataset.shuffle(buffer_size=10000).batch(self.batch_size)
+        # save metadata
+        with open(os.path.join(directory, "trainer_meta.pkl"), "wb") as f:
+            pickle.dump(meta, f)
 
-#             opt = tf.optimizers.Adam(learning_rate=0.01)
+        print(f"\u2705 Saved {meta['n_annotators']} SimpleGPR models to '{directory}'")
 
-#             # Custom training loop
-#             for step, batch in enumerate(dataset.repeat()):
-#                 with tf.GradientTape() as tape:
-#                     loss = -model.elbo(batch)
-#                 grads = tape.gradient(loss, model.trainable_variables)
-#                 opt.apply_gradients(zip(grads, model.trainable_variables))
+    def load(self, directory: str) -> None:
+        """Restore the trainer and all :class:`SimpleGPR` models persisted by
+        :meth:`save`.
+        """
+        meta_path = os.path.join(directory, "trainer_meta.pkl")
+        if not os.path.exists(meta_path):
+            raise FileNotFoundError(f"Could not find metadata file at '{meta_path}'")
 
-#                 if step >= self.max_iter:
-#                     break
+        with open(meta_path, "rb") as f:
+            meta = pickle.load(f)
 
-#             self.model = model
-#             self.model_type = 'sparse'
+        self.inducing_points = meta["inducing_points"]
+        n_annotators = meta["n_annotators"]
 
-#         print(f"✅ Trained {self.model_type.upper()} GPR model.")
+        self.models = []
+        for idx in range(n_annotators):
+            model_path = os.path.join(directory, f"annotator_{idx}")
+            gpr = SimpleGPR()  # default hyper‑params are fine when loading
+            gpr.load(model_path)
+            self.models.append(gpr)
 
-#     def predict(self, X_new):
-#         if self.model_type == 'full':
-#             mean, std = self.model.predict(X_new, return_std=True)
-#         else:
-#             mean, var = self.model.predict_f(X_new.astype(np.float64))
-#             mean = mean.numpy().flatten()
-#             std = np.sqrt(var.numpy().flatten())
-#         return mean, std
-#     def save(self, path):
-#         """
-#         Save the SimpleGPR model to a single .pkl file.
-
-#         Parameters:
-#         -----------
-#         path : str
-#             Path without extension.
-#         """
-#         metadata = {
-#             'threshold_samples': self.threshold_samples,
-#             'inducing_points': self.inducing_points,
-#             'model_type': self.model_type,
-#         }
-
-#         if self.model_type == 'full':
-#             data = {
-#                 'metadata': metadata,
-#                 'model': self.model,
-#             }
-#         else:
-#             params = gpflow.utilities.parameter_dict(self.model)
-#             data = {
-#                 'metadata': metadata,
-#                 'params': params,
-#             }
-
-#         with open(path + '.pkl', 'wb') as f:
-#             pickle.dump(data, f)
-
-#     def load(self, path):
-#         """
-#         Load the SimpleGPR model from a .pkl file.
-
-#         Parameters:
-#         -----------
-#         path : str
-#             Path without extension.
-#         """
-#         with open(path + '.pkl', 'rb') as f:
-#             data = pickle.load(f)
-
-#         metadata = data['metadata']
-#         self.threshold_samples = metadata['threshold_samples']
-#         self.inducing_points = metadata['inducing_points']
-#         self.model_type = metadata['model_type']
-
-#         if self.model_type == 'full':
-#             self.model = data['model']
-#         else:
-#             # Create a dummy SGPR model with same structure
-#             kernel = gpflow.kernels.SquaredExponential()
-#             self.model = gpflow.models.SGPR(
-#                 data=(np.zeros((1, 1)), np.zeros((1, 1))),
-#                 kernel=kernel,
-#                 inducing_variable=np.zeros((1, 1))
-#             )
-#             gpflow.utilities.restore_model(self.model, data['params'])
-
-# -----------------------------------------------------------------------------
-# Global numerical settings
-# -----------------------------------------------------------------------------
-# Use single‑precision everywhere to lower memory consumption and improve speed
-# on compatible hardware (e.g. consumer GPUs with larger FP32 throughput).
-# ----------------------------------------------------------------------------
+        print(f"\u2705 Loaded {n_annotators} SimpleGPR models from '{directory}'")
 
 
 class SimpleGPR:

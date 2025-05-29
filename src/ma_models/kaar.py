@@ -671,6 +671,29 @@ class LCKA(BaseEstimator, TransformerMixin):
         self.fit(X,y)
         return  self.transform(X)
 
+    def get_new_q2(self, X, iAnn, X_new):
+        R = iAnn.shape[1]
+        q2_new = np.zeros((len(X_new), R))
+        for ann in range(R):
+            # subset of X with labels from annotator 1
+            mask = iAnn[:,ann].astype('bool')
+            X_ann = X[mask]
+            # samples of X_new which are in X used for training the model
+            idx = np.isin(X_new, X_ann).all(axis=1)
+            X_1 = X_new[idx]
+            X_2 = X_new[~idx]
+            # for each sample in X_1 find its index in the original X, to find
+            # its q later
+            idx_in_q = np.array([], dtype=np.int32)
+            for x in X_1:
+                idx_in_q = np.concatenate((idx_in_q, np.where((X == x).all(axis=1))[0]))
+            q2_new[idx, ann] = self.q[idx_in_q, ann]**2
+            calculated_q2 = np.array([])
+            for x in X_2:
+                coefs = np.exp(-cdist(x.reshape(1, -1), X_ann))
+                calculated_q2 = np.append(calculated_q2, (coefs*self.q[mask, ann]**2).sum()/coefs.sum())
+            q2_new[~idx, ann] = calculated_q2
+        return q2_new
 
     def plot_history(self):
       fig,ax = plt.subplots(1,figsize=(3,3))
@@ -748,7 +771,6 @@ class LCKA(BaseEstimator, TransformerMixin):
         plt.show()
         return q
 
-
     def plot_lckaQ(self,X,q, redlcka='umap',random_state=123,n_neighbors=10,cmap='Reds',annotators=None):
         """
         Parameters:
@@ -798,32 +820,7 @@ class LCKA(BaseEstimator, TransformerMixin):
         sm.set_array([])
         cbar = plt.colorbar(sm,cax=cax)
         plt.show()
-        return
-
-    def get_new_q2(self, X, iAnn, X_new):
-        R = iAnn.shape[1]
-        q2_new = np.zeros((len(X_new), R))
-        for ann in range(R):
-            # subset of X with labels from annotator 1
-            mask = iAnn[:,ann].astype('bool')
-            X_ann = X[mask]
-            # samples of X_new which are in X used for training the model
-            idx = np.isin(X_new, X_ann).all(axis=1)
-            X_1 = X_new[idx]
-            X_2 = X_new[~idx]
-            # for each sample in X_1 find its index in the original X, to find
-            # its q later
-            idx_in_q = np.array([], dtype=np.int32)
-            for x in X_1:
-                idx_in_q = np.concatenate((idx_in_q, np.where((X == x).all(axis=1))[0]))
-            q2_new[idx, ann] = self.q[idx_in_q, ann]**2
-            calculated_q2 = np.array([])
-            for x in X_2:
-                coefs = np.exp(-cdist(x.reshape(1, -1), X_ann))
-                calculated_q2 = np.append(calculated_q2, (coefs*self.q[mask, ann]**2).sum()/coefs.sum())
-            q2_new[~idx, ann] = calculated_q2
-        return q2_new
-
+    
 class LCKAGPR:
     def __init__(self, lcka_params=None, gpr_params=None):
         """
