@@ -20,11 +20,11 @@ import matplotlib
 # from umap import UMAP
 
 # GPR
-from gpr import AnnotatorGPRTrainer
+from .gpr import AnnotatorGPRTrainer
 
 from typing import Dict, Optional
 from pathlib import Path
-from utils import get_iAnn
+from .utils import get_iAnn
 
 DTYPE = tf.float64 
 DTYPEN = np.float64
