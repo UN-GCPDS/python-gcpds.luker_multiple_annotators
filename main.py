@@ -8,8 +8,7 @@ import gpflow as gpf
 from scipy.stats import qmc
 
 from ma_models import models
-from ma_models.kaar import MA_GCCE
-from src.ma_models.utils import get_iAnn, transform_data
+from src.ma_models.utils import transform_data
 from src.ma_models.parameters import *
 from ma_models.ccgpma import multiAnnotator_Gaussian, run_adam, create_compiled_predict_y
 app = FastAPI()
@@ -30,7 +29,7 @@ def load_models():
     # Load sensory model
     models_sens = []
     for var in SENS_VARS_CHOC:
-        models_sens.append(tf.saved_model.load(f"models/ccgpma/ccgpma_{var}"))
+        models_sens.append(tf.saved_model.load(f"models/mar-ccgp/mar-ccgp_{var}"))
     app.state.model_to_sens = models.MultiOutputCCGPMA(models_sens)
 
     # Load physicochemical model
