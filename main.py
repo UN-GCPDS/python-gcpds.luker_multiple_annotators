@@ -6,10 +6,11 @@ import tensorflow as tf
 import pickle
 import gpflow as gpf
 from scipy.stats import qmc
+from pathlib import Path
+import joblib
 
 from ma_models import models
-from ma_models.kaar import MA_GCCE
-from src.ma_models.utils import get_iAnn, transform_data
+from src.ma_models.utils import transform_data
 from src.ma_models.parameters import *
 from ma_models.ccgpma import multiAnnotator_Gaussian, run_adam, create_compiled_predict_y
 app = FastAPI()
@@ -30,7 +31,7 @@ def load_models():
     # Load sensory model
     models_sens = []
     for var in SENS_VARS_CHOC:
-        models_sens.append(tf.saved_model.load(f"models/ccgpma/ccgpma_{var}"))
+        models_sens.append(tf.saved_model.load(f"models/mar-ccgp/mar-ccgp_{var}"))
     app.state.model_to_sens = models.MultiOutputCCGPMA(models_sens)
 
     # Load physicochemical model
@@ -39,6 +40,37 @@ def load_models():
     with open('models/ccgpma/scaler.pkl', 'rb') as file:
         scaler_X = pickle.load(file)
     app.state.scaler_fq = scaler_X
+@app.on_event("startup")
+def load_models():
+    # ---------- Sensory models (per variable) ----------
+    base = Path("models/mar-ccgp")
+    per_var = []
+
+    for var in SENS_VARS_CHOC:
+        model_dir = base / f"{var}_mar-ccgp"
+
+        m = tf.saved_model.load(str(model_dir))
+        scalerX = joblib.load(model_dir / "scalerX.joblib")
+        imputer = joblib.load(model_dir / "imputer.joblib")
+        scalerY = joblib.load(model_dir / "scalerY.joblib")
+
+        if not hasattr(m, "compiled_predict_y"):
+            in_dim = getattr(scalerX, "n_features_in_", None)
+            if in_dim is None:
+                raise RuntimeError(f"Cannot infer input dim for '{var}'.")
+            m.compiled_predict_y = create_compiled_predict_y(m, in_dim)
+
+        per_var.append({
+            "name": var, "model": m,
+            "scalerX": scalerX, "imputer": imputer, "scalerY": scalerY
+        })
+
+    app.state.model_to_sens = models.MultiOutputCCGPMA(per_var)
+
+    # ---------- Physicochemical model (sens -> fq) ----------
+    app.state.model_to_fq = tf.keras.models.load_model("models/gcce/model_s2fq.keras")
+    with open("models/gcce/scaler.pkl", "rb") as f:      # adjust if your scaler lives elsewhere
+        app.state.scaler_fq = pickle.load(f)
 # Definir constante global para el número mínimo de muestras
 MIN_SAMPLES = 10
 
@@ -114,16 +146,26 @@ class TrainingData2(BaseModel):
             raise ValueError(f"Se necesitan al menos {MIN_SAMPLES} muestras para el entrenamiento.")
         return v
 
-# Prediction endpoints using injected dependencies
 @app.post("/predict_sens")
-async def predict_sens(data: FqInput, model_to_sens=Depends(get_model_sens), scaler_fq=Depends(get_scaler_fq)):
-    input_data = np.array([[data.humidity_halogen, data.fat_nmr, data.granulometry_micrometer,
-                            data.plastic_viscosity_anton_paar, data.flow_limit_anton_paar]])
-    input_data = scaler_fq.transform(input_data)
-    predictions, _ = model_to_sens.predict(input_data)
-    predictions *= 10
-    pred_values = predictions.flatten().tolist()
-    return {TRANS_SENS_VARS_CHOC[SENS_VARS_CHOC[i]]: pred_values[i] for i in range(len(pred_values))}
+async def predict_sens(
+    data: FqInput,
+    model_to_sens = Depends(get_model_sens),
+):
+    X_raw = np.array([[
+        data.humidity_halogen,
+        data.fat_nmr,
+        data.granulometry_micrometer,
+        data.plastic_viscosity_anton_paar,
+        data.flow_limit_anton_paar
+    ]], dtype=np.float32)
+
+    preds, _ = model_to_sens.predict(X_raw)  # shape (1, V); already in [0,10] scale
+    pred_values = preds.squeeze(0).tolist()
+
+    return {
+        TRANS_SENS_VARS_CHOC[SENS_VARS_CHOC[i]]: pred_values[i]
+        for i in range(len(pred_values))
+    }
 
 @app.post("/predict_fq")
 async def predict_fq(data: SensInput, model_to_fq=Depends(get_model_fq), scaler_fq=Depends(get_scaler_fq)):

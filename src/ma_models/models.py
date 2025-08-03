@@ -19,19 +19,44 @@ class MultiOutputModel(tf.keras.Model):
 
         return np.vstack(sens_predict).T, ann_rel
 
+# class MultiOutputCCGPMA(tf.keras.Model):
+#     def __init__(self, models):
+#         super(MultiOutputCCGPMA, self).__init__()
+#         self.models = models
+#     def predict(self, inputs):
+#         sens_predict = []
+#         ann_rel = []
+#         for model in self.models:
+#             pred = model.compiled_predict_y(inputs)
+#             sens_predict.append(np.clip(pred[0][:,0], a_min=0, a_max=10))
+#             ann_rel.append(pred[0][:,1:])
+#         return np.vstack(sens_predict).T, ann_rel
+
 class MultiOutputCCGPMA(tf.keras.Model):
-    def __init__(self, models):
-        super(MultiOutputCCGPMA, self).__init__()
-        self.models = models
-    def predict(self, inputs):
-        sens_predict = []
-        ann_rel = []
-        for model in self.models:
-            pred = model.compiled_predict_y(inputs)
-            sens_predict.append(np.clip(pred[0][:,0], a_min=0, a_max=10))
-            ann_rel.append(pred[0][:,1:])
-        return np.vstack(sens_predict).T, ann_rel
-    
+    """
+    per_var: list of dicts with keys:
+      name, model, scalerX, imputer, scalerY
+    """
+    def __init__(self, per_var):
+        super().__init__()
+        self.per_var = per_var
+
+    def predict(self, X_raw: np.ndarray):
+        sens_means = []
+        ann_rel_all = []
+        for art in self.per_var:
+            Xs = art["scalerX"].transform(X_raw)
+            Xs = art["imputer"].transform(Xs)
+
+            mu_var = art["model"].compiled_predict_y(Xs)  # (mu, var)
+            mu_scaled = mu_var[0][:, :1]                  # first col: target mean
+            mu = art["scalerY"].inverse_transform(mu_scaled)[:, 0]
+
+            sens_means.append(np.clip(mu, 0.0, 10.0))
+            ann_rel_all.append(mu_var[0][:, 1:])          # other columns (e.g., reliabilities)
+
+        return np.column_stack(sens_means), ann_rel_all
+
 class model_s2fq:
     def __init__(self):
         self.model = self._build_model()
