@@ -9,10 +9,14 @@ from scipy.stats import qmc
 from pathlib import Path
 import joblib
 
-from ma_models import models
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.experimental import enable_iterative_imputer  
+from sklearn.impute import IterativeImputer
+
+from src.ma_models import models
 from src.ma_models.utils import transform_data
 from src.ma_models.parameters import *
-from ma_models.ccgpma import multiAnnotator_Gaussian, run_adam, create_compiled_predict_y
+from src.ma_models.ccgpma import MultiAnnotatorGaussian, run_adam, create_compiled_predict_y
 app = FastAPI()
 
 # Dependency to load models
@@ -29,11 +33,29 @@ def get_scaler_fq():
 @app.on_event("startup")
 def load_models():
     # Load sensory model
-    models_sens = []
-    for var in SENS_VARS_CHOC:
-        models_sens.append(tf.saved_model.load(f"models/mar-ccgp/mar-ccgp_{var}"))
-    app.state.model_to_sens = models.MultiOutputCCGPMA(models_sens)
+    base = Path("models/mar-ccgp")
+    per_var = []
 
+    for var in SENS_VARS_CHOC:
+        model_dir = base / f"{var}_mar-ccgp"
+
+        m = tf.saved_model.load(str(model_dir))
+        scalerX = joblib.load(model_dir / "scalerX.joblib")
+        imputer = joblib.load(model_dir / "imputer.joblib")
+        scalerY = joblib.load(model_dir / "scalerY.joblib")
+
+        if not hasattr(m, "compiled_predict_y"):
+            in_dim = getattr(scalerX, "n_features_in_", None)
+            if in_dim is None:
+                raise RuntimeError(f"Cannot infer input dim for '{var}'.")
+            m.compiled_predict_y = create_compiled_predict_y(m, in_dim)
+
+        per_var.append({
+            "name": var, "model": m,
+            "scalerX": scalerX, "imputer": imputer, "scalerY": scalerY
+        })
+
+    app.state.model_to_sens = models.MultiOutputCCGPMA(per_var)
     # Load physicochemical model
     app.state.model_to_fq = tf.keras.models.load_model('models/gcce/model_s2fq.keras')
 
@@ -69,7 +91,7 @@ def load_models():
 
     # ---------- Physicochemical model (sens -> fq) ----------
     app.state.model_to_fq = tf.keras.models.load_model("models/gcce/model_s2fq.keras")
-    with open("models/gcce/scaler.pkl", "rb") as f:      # adjust if your scaler lives elsewhere
+    with open("models/gcce/scaler_X.pkl", "rb") as f:      # adjust if your scaler lives elsewhere
         app.state.scaler_fq = pickle.load(f)
 # Definir constante global para el número mínimo de muestras
 MIN_SAMPLES = 10
@@ -179,65 +201,72 @@ async def predict_fq(data: SensInput, model_to_fq=Depends(get_model_fq), scaler_
 
 # Retraining endpoint with validation for sensory model
 @app.post("/retrain_model_sens")
-async def retrain_model_sens(training_data: TrainingData2, model_to_sens=Depends(get_model_sens), scaler_fq=Depends(get_scaler_fq)):
-    # Check minimum number of samples
+async def retrain_model_sens(
+    training_data: TrainingData2,
+    model_to_sens = Depends(get_model_sens),
+):
     if len(training_data.data) < MIN_SAMPLES:
         raise HTTPException(status_code=400, detail=f"Se necesitan al menos {MIN_SAMPLES} muestras para el entrenamiento.")
-    # Transform and retrain the model
-    Y, X = transform_data(training_data)
-    X = scaler_fq.transform(X)
-    
+
+    Y, X = transform_data(training_data)  # Y: dict per var; X: (N, D)
+
+    base = Path("models/mar-ccgp")
+    base.mkdir(parents=True, exist_ok=True)
+
     for var in SENS_VARS_CHOC:
-        y = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]])).astype(np.float32)
-        R = y.shape[1]
+        y_raw = np.nan_to_num(np.round(Y[TRANS_SENS_VARS_CHOC[var]])).astype(np.float32)  # (N, R)
+        N, R = y_raw.shape
         L = R + 1
-        M = min(100, X.shape[0])
-        minibatch_size = 100
-        # inducing points
-        dim = X.shape[1]
-        lhs = qmc.LatinHypercube(d=dim)
-        Zinit = lhs.random(n=M)
 
-        X_min = np.min(X, axis=0)
-        X_max = np.max(X, axis=0)
-        Zinit = X_min + Zinit * (X_max - X_min)
-        Zinit = Zinit.astype(np.float32)
+        # --- per-variable preprocessing ---
+        scalerX = MinMaxScaler()
+        Xs = scalerX.fit_transform(X)
 
-        X = X.astype(np.float32)
+        imputer = IterativeImputer(random_state=42)
+        Xs = imputer.fit_transform(Xs)
 
-        # Define kernels
-        kern_list = [gpf.kernels.SquaredExponential(variance=0.5, lengthscales=0.05) for _ in range(L)]
-        kernel = gpf.kernels.LinearCoregionalization(kern_list, W=np.identity(L))
+        scalerY = StandardScaler()
+        y_flat = y_raw.reshape(-1, 1)
+        y_scaled = scalerY.fit_transform(y_flat).reshape(N, R)
+        y_scaled[np.isnan(y_scaled)] = -1e20
 
-        # Set up inducing variables
-        Z = Zinit.copy()
+        # --- inducing points (Latin hypercube) ---
+        M = min(100, N)
+        dim = Xs.shape[1]
+        Zinit = qmc.LatinHypercube(d=dim).random(n=M)
+        X_min, X_max = Xs.min(axis=0), Xs.max(axis=0)
+        Z = (X_min + Zinit * (X_max - X_min)).astype(np.float32)
+
         iv = gpf.inducing_variables.SharedIndependentInducingVariables(
             gpf.inducing_variables.InducingPoints(Z)
         )
+        kern_list = [gpf.kernels.SquaredExponential(variance=0.5, lengthscales=0.05) for _ in range(L)]
+        kernel = gpf.kernels.LinearCoregionalization(kern_list, W=np.identity(L))
 
-        # Variational Parameters
-        q_mu = np.zeros((M, L))
-        q_sqrt = np.repeat(np.eye(M)[None, ...], L, axis=0) * 0.1
+        q_mu = np.zeros((M, L), dtype=np.float32)
+        q_sqrt = np.repeat(np.eye(M, dtype=np.float32)[None, ...], L, axis=0) * 0.1
 
-        # Create SVGP Model
         m = gpf.models.SVGP(
             kernel,
-            multiAnnotator_Gaussian(R),
+            MultiAnnotatorGaussian(R),
             inducing_variable=iv,
             q_mu=q_mu,
             q_sqrt=q_sqrt,
         )
 
-        # Training
-        train_dataset = tf.data.Dataset.from_tensor_slices((X, y)).repeat()
-        lr = 0.01
-        MAXITER = 500
-        logf = run_adam(m, train_dataset, minibatch_size, MAXITER, lr)
-        
-        m.compiled_predict_y = create_compiled_predict_y(m, X.shape[1])
-        # 🔹 Save Model
-        tf.saved_model.save(m, f"models/ccgpma/ccgpma_{var}")
+        train_ds = tf.data.Dataset.from_tensor_slices((Xs.astype(np.float32), y_scaled)).repeat()
+        _ = run_adam(m, train_ds, minibatch_size=100, maxiter=500, lr=0.01)
 
+        m.compiled_predict_y = create_compiled_predict_y(m, Xs.shape[1])
+
+        # --- save per-variable folder ---
+        model_dir = base / f"{var}_mar-ccgp"
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        tf.saved_model.save(m, str(model_dir))
+        joblib.dump(scalerX, model_dir / "scalerX.joblib")
+        joblib.dump(imputer, model_dir / "imputer.joblib")
+        joblib.dump(scalerY, model_dir / "scalerY.joblib")
 
     return {"message": "Modelo entrenado exitosamente"}
 
@@ -281,3 +310,5 @@ async def retrain_model_fq(training_data: TrainingData, model_to_fq=Depends(get_
     model_to_fq.fit(X/10, Y)
     model_to_fq.save("models/gcce/model_s2fq.keras")
     return {"message": "Modelo entrenado exitosamente"}
+
+#uvicorn ain:app --host 0.0.0.0 --port 8000 --reload
