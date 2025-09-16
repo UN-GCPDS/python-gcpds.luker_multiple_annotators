@@ -1,0 +1,13 @@
+# Core numerics
+numpy==1.26.4
+scipy==1.11.4
+pandas==2.2.2
+
+scikit-learn==1.5.2
+
+tensorflow==2.16.2
+tensorflow-probability==0.24.0
+tf-keras==2.17.0   
+
+# GPflow
+gpflow==2.9.2
