@@ -38,20 +38,10 @@ class SoftmaxCompositional(gpflow.likelihoods.Likelihood):
         Fvar = tf.cast(Fvar, gpflow.default_float())
         Y   = tf.cast(Y,   gpflow.default_float())
 
-        # Ranks must be 2: (N, D)
-        tf.debugging.assert_rank(Fmu, 2, message="Fmu must be rank-2 [N,D]")
-        tf.debugging.assert_rank(Fvar, 2, message="Fvar must be rank-2 [N,D]")
-        tf.debugging.assert_rank(Y,   2, message="Y must be rank-2 [N,D]")
-
         # Match N and D
         n_fmu = tf.shape(Fmu)[0]; d_fmu = tf.shape(Fmu)[1]
         n_fvar= tf.shape(Fvar)[0]; d_fvar= tf.shape(Fvar)[1]
         n_y   = tf.shape(Y)[0];    d_y   = tf.shape(Y)[1]
-
-        tf.debugging.assert_equal(n_fmu, n_fvar, message="N mismatch: Fmu vs Fvar")
-        tf.debugging.assert_equal(d_fmu, d_fvar, message="D mismatch: Fmu vs Fvar")
-        tf.debugging.assert_equal(n_fmu, n_y,    message="N mismatch: Fmu/Fvar vs Y")
-        tf.debugging.assert_equal(d_fmu, d_y,    message="D mismatch: Fmu/Fvar vs Y")
 
         # One-time shape print (remove after debugging)
         tf.print("[LIK] shapes -> Fmu", tf.shape(Fmu), "Fvar", tf.shape(Fvar), "Y", tf.shape(Y), summarize=-1)

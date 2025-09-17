@@ -1,0 +1,35 @@
+{
+  "id_col": "idx",
+  "ingredient_count": 76,
+  "ingredient_names_sample": [
+    "2000020",
+    "2000021",
+    "2000023",
+    "2000025",
+    "2000027",
+    "2000026",
+    "2000036",
+    "2000037",
+    "2000038",
+    "2000039"
+  ],
+  "config": {
+    "num_inducing": 20,
+    "ard": true,
+    "tau": 100.0,
+    "mc_pred": 64,
+    "max_iters": 10,
+    "lr": 0.01,
+    "seed": 0
+  },
+  "has_cv": true,
+  "cv": {
+    "scheme": "5-Fold CV",
+    "folds": 5,
+    "aitchison_mean": 54.62827009690758,
+    "aitchison_std": 6.933322661111332,
+    "l2_mean": 0.6283822406757321,
+    "l2_std": 0.1020352033674376,
+    "n_samples": 93
+  }
+}
