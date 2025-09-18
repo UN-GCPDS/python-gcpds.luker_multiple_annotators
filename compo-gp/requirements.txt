@@ -2,7 +2,7 @@
 numpy==1.26.4
 scipy==1.11.4
 pandas==2.2.2
-
+matplotlib==3.10.6
 scikit-learn==1.5.2
 
 tensorflow==2.17
@@ -13,3 +13,6 @@ tf-keras==2.17.0
 gpflow==2.9.2
 
 joblib==1.4.2
+
+# hpo
+optuna==4.4.0

@@ -22,6 +22,7 @@ def load_and_align(spec: DataSpec) -> Tuple[pd.DataFrame, pd.DataFrame]:
     ingredient_cols = [c for c in Ydf.columns if c != spec.id_col]
     X = df[[spec.id_col] + sensory_cols].copy()
     Y = df[[spec.id_col] + ingredient_cols].copy()
+    Y = Y.fillna(0.0)
     return X, Y
 
 def build_composition(Y: pd.DataFrame, spec: DataSpec) -> Tuple[np.ndarray, List[str]]:
