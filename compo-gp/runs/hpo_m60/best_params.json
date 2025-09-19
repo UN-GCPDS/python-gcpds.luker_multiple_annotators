@@ -1,0 +1,20 @@
+{
+  "min_presence": 5,
+  "add_other": false,
+  "tau": 1062.7710204062691,
+  "eps_lik": 1e-08,
+  "kernel": "Matern32",
+  "ard": true,
+  "lengthscale_init": 1.0568253632094913,
+  "variance_init": 7.666162723256056,
+  "z_init": "kmeans++",
+  "z_trainable": false,
+  "optimizer": "rmsprop",
+  "lr": 0.0037633658796173866,
+  "clipnorm": 5.0,
+  "patience": 175,
+  "min_delta": 1.855255640507423e-06,
+  "threshold_mode": "per_ingredient",
+  "per_ing_scale": 1.9865754380639407,
+  "mc_pred": 128
+}

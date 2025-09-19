@@ -1,0 +1,12 @@
+{
+  "folds": 10,
+  "M_fixed": 60,
+  "seed": 0,
+  "n_trials": 120,
+  "total_seconds": 14160.475769900018,
+  "paths": {
+    "sensory": "data/data_sens.csv",
+    "ingredients": "data/data_recipe.csv",
+    "id_col": "idx"
+  }
+}
